@@ -7,19 +7,16 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from dacite import from_dict
-from omegaconf import OmegaConf
-from tqdm import tqdm
-
-from gymnasium import spaces
-
-import numpy as np
-import torch
-
 # ManiSkill specific imports
 import mani_skill.envs
+import numpy as np
+import torch
+from dacite import from_dict
+from gymnasium import spaces
 from mani_skill import ASSET_DIR
 from mani_skill.utils import common
+from omegaconf import OmegaConf
+from tqdm import tqdm
 
 from mshab.agents.bc import Agent as BCAgent
 from mshab.agents.dp import Agent as DPAgent
@@ -31,7 +28,6 @@ from mshab.utils.array import recursive_slice, to_tensor
 from mshab.utils.config import parse_cfg
 from mshab.utils.logger import Logger, LoggerConfig
 from mshab.utils.time import NonOverlappingTimeProfiler
-
 
 if TYPE_CHECKING:
     from mshab.envs import SequentialTaskEnv
@@ -167,14 +163,8 @@ class EvalConfig:
         assert self.task in ["tidy_house", "prepare_groceries", "set_table"]
         assert self.task in self.eval_env.task_plan_fp
 
-        assert self.policy_type in ["rl_all_obj", "rl_per_obj"] + list(
-            POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS.keys()
-        )
-        self.policy_key = (
-            self.policy_type.split("_")[0]
-            if "rl" in self.policy_type
-            else self.policy_type
-        )
+        assert self.policy_type in ["rl_all_obj", "rl_per_obj"] + list(POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS.keys())
+        self.policy_key = self.policy_type.split("_")[0] if "rl" in self.policy_type else self.policy_type
 
         self.logger.exp_cfg = asdict(self)
         del self.logger.exp_cfg["logger"]["exp_cfg"]
@@ -232,23 +222,17 @@ def eval(cfg: EvalConfig):
 
             self._control_step_start_time = time.time()
             self._cur_sim_step = 0
-            self._control_step_end_time = (
-                self._control_step_start_time + self.control_timestep
-            )
+            self._control_step_end_time = self._control_step_start_time + self.control_timestep
 
         def wrapped_after_simulation_step(self):
             _original_after_simulation_step()
             if getattr(self, "_control_step_start_time", None) is None:
                 self._control_step_start_time = time.time()
                 self._cur_sim_step = 0
-                self._control_step_end_time = (
-                    self._control_step_start_time + self.control_timestep
-                )
+                self._control_step_end_time = self._control_step_start_time + self.control_timestep
                 self._realtime_drift = 0
 
-            step_end_time = self._control_step_start_time + (
-                time_per_sim_step * (self._cur_sim_step + 1)
-            )
+            step_end_time = self._control_step_start_time + (time_per_sim_step * (self._cur_sim_step + 1))
             if time.time() < step_end_time:
                 if self.gpu_sim_enabled:
                     self.scene._gpu_fetch_all()
@@ -280,9 +264,7 @@ def eval(cfg: EvalConfig):
         if algo_cfg.name == "ppo":
             policy = PPOAgent(eval_obs, act_space.shape)
             policy.eval()
-            policy.load_state_dict(
-                torch.load(algo_ckpt_path, map_location=device)["agent"]
-            )
+            policy.load_state_dict(torch.load(algo_ckpt_path, map_location=device)["agent"])
             policy.to(device)
             policy_act_fn = lambda obs: policy.get_action(obs, deterministic=True)
         elif algo_cfg.name == "sac":
@@ -321,9 +303,7 @@ def eval(cfg: EvalConfig):
                 device=device,
             )
             policy.eval()
-            policy.load_state_dict(
-                torch.load(algo_ckpt_path, map_location=device)["agent"]
-            )
+            policy.load_state_dict(torch.load(algo_ckpt_path, map_location=device)["agent"])
             policy.to(device)
             policy_act_fn = lambda obs: policy.actor(
                 obs["pixels"],
@@ -334,9 +314,7 @@ def eval(cfg: EvalConfig):
         elif algo_cfg.name == "bc":
             policy = BCAgent(eval_obs, act_space.shape)
             policy.eval()
-            policy.load_state_dict(
-                torch.load(algo_ckpt_path, map_location=device)["agent"]
-            )
+            policy.load_state_dict(torch.load(algo_ckpt_path, map_location=device)["agent"])
             policy.to(device)
             policy_act_fn = lambda obs: policy(obs)
         elif algo_cfg.name == "diffusion_policy":
@@ -354,9 +332,7 @@ def eval(cfg: EvalConfig):
                 device=device,
             )
             policy.eval()
-            policy.load_state_dict(
-                torch.load(algo_ckpt_path, map_location=device)["agent"]
-            )
+            policy.load_state_dict(torch.load(algo_ckpt_path, map_location=device)["agent"])
             policy.to(device)
 
             def get_dp_act(obs):
@@ -376,27 +352,11 @@ def eval(cfg: EvalConfig):
         mshab_ckpt_dir = Path("mshab_checkpoints")
 
     policies = dict()
-    for subtask_name, subtask_targs in POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS[
-        cfg.policy_key
-    ][cfg.task].items():
+    for subtask_name, subtask_targs in POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS[cfg.policy_key][cfg.task].items():
         policies[subtask_name] = dict()
         for targ_name in subtask_targs:
-            cfg_path = (
-                mshab_ckpt_dir
-                / cfg.policy_key
-                / cfg.task
-                / subtask_name
-                / targ_name
-                / "config.yml"
-            )
-            ckpt_path = (
-                mshab_ckpt_dir
-                / cfg.policy_key
-                / cfg.task
-                / subtask_name
-                / targ_name
-                / "policy.pt"
-            )
+            cfg_path = mshab_ckpt_dir / cfg.policy_key / cfg.task / subtask_name / targ_name / "config.yml"
+            ckpt_path = mshab_ckpt_dir / cfg.policy_key / cfg.task / subtask_name / targ_name / "policy.pt"
             policies[subtask_name][targ_name] = get_policy_act_fn(cfg_path, ckpt_path)
 
     def act(obs):
@@ -423,22 +383,12 @@ def eval(cfg: EvalConfig):
 
                 # get targ names to query per-obj policies
                 sapien_obj_names = [None] * uenv.num_envs
-                for env_num, subtask_num in enumerate(
-                    torch.clip(subtask_pointer, max=len(uenv.task_plan) - 1)
-                ):
+                for env_num, subtask_num in enumerate(torch.clip(subtask_pointer, max=len(uenv.task_plan) - 1)):
                     subtask = uenv.task_plan[subtask_num]
-                    if isinstance(subtask, PickSubtask) or isinstance(
-                        subtask, PlaceSubtask
-                    ):
-                        sapien_obj_names[env_num] = (
-                            uenv.subtask_objs[subtask_num]._objs[env_num].name
-                        )
-                    elif isinstance(subtask, OpenSubtask) or isinstance(
-                        subtask, CloseSubtask
-                    ):
-                        sapien_obj_names[env_num] = (
-                            uenv.subtask_articulations[subtask_num]._objs[env_num].name
-                        )
+                    if isinstance(subtask, PickSubtask) or isinstance(subtask, PlaceSubtask):
+                        sapien_obj_names[env_num] = uenv.subtask_objs[subtask_num]._objs[env_num].name
+                    elif isinstance(subtask, OpenSubtask) or isinstance(subtask, CloseSubtask):
+                        sapien_obj_names[env_num] = uenv.subtask_articulations[subtask_num]._objs[env_num].name
                 targ_names = []
                 for sapien_on in sapien_obj_names:
                     if sapien_on is None:
@@ -451,11 +401,7 @@ def eval(cfg: EvalConfig):
                 assert len(targ_names) == uenv.num_envs
 
                 # if policy_type == "rl_per_obj" or doing open/close env, need to query per-obj policy
-                if (
-                    cfg.policy_type == "rl_per_obj"
-                    or torch.any(open_env_idx)
-                    or torch.any(close_env_idx)
-                ):
+                if cfg.policy_type == "rl_per_obj" or torch.any(open_env_idx) or torch.any(close_env_idx):
                     tn_env_idxs = dict()
                     for env_num, tn in enumerate(targ_names):
                         if tn not in tn_env_idxs:
@@ -479,13 +425,11 @@ def eval(cfg: EvalConfig):
                         for tn, targ_env_idx in tn_env_idxs.items():
                             subtask_targ_env_idx = subtask_env_idx & targ_env_idx
                             if torch.any(subtask_targ_env_idx):
-                                action[subtask_targ_env_idx] = policies[subtask_name][
-                                    tn
-                                ](recursive_slice(obs, subtask_targ_env_idx))
+                                action[subtask_targ_env_idx] = policies[subtask_name][tn](
+                                    recursive_slice(obs, subtask_targ_env_idx)
+                                )
                     else:
-                        action[subtask_env_idx] = policies[subtask_name]["all"](
-                            recursive_slice(obs, subtask_env_idx)
-                        )
+                        action[subtask_env_idx] = policies[subtask_name]["all"](recursive_slice(obs, subtask_env_idx))
 
                 if torch.any(pick_env_idx):
                     set_subtask_targ_policy_act("pick", pick_env_idx)
@@ -506,13 +450,9 @@ def eval(cfg: EvalConfig):
 
     task_targ_names = set()
     for subtask_name in POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS["rl"][cfg.task]:
-        task_targ_names.update(
-            POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS["rl"][cfg.task][subtask_name]
-        )
+        task_targ_names.update(POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS["rl"][cfg.task][subtask_name])
 
-    eval_obs = to_tensor(
-        eval_envs.reset(seed=cfg.seed)[0], device=device, dtype="float"
-    )
+    eval_obs = to_tensor(eval_envs.reset(seed=cfg.seed)[0], device=device, dtype="float")
     subtask_fail_counts = defaultdict(int)
     last_subtask_pointer = uenv.subtask_pointer.clone()
     pbar = tqdm(range(cfg.max_trajectories), total=cfg.max_trajectories)
@@ -538,16 +478,11 @@ def eval(cfg: EvalConfig):
     def update_fail_subtask_counts(done):
         if torch.any(done):
             subtask_nums = last_subtask_pointer[done]
-            for fail_subtask, num_envs in zip(
-                *np.unique(subtask_nums.cpu().numpy(), return_counts=True)
-            ):
+            for fail_subtask, num_envs in zip(*np.unique(subtask_nums.cpu().numpy(), return_counts=True)):
                 subtask_fail_counts[fail_subtask] += num_envs
             with open(logger.exp_path / "subtask_fail_counts.json", "w+") as f:
                 json.dump(
-                    dict(
-                        (str(k), int(subtask_fail_counts[k]))
-                        for k in sorted(subtask_fail_counts.keys())
-                    ),
+                    dict((str(k), int(subtask_fail_counts[k])) for k in sorted(subtask_fail_counts.keys())),
                     f,
                 )
 
@@ -587,16 +522,10 @@ def eval(cfg: EvalConfig):
 
     results_logs = dict(
         num_trajs=len(eval_envs.return_queue),
-        return_per_step=common.to_tensor(eval_envs.return_queue, device=device)
-        .float()
-        .mean()
+        return_per_step=common.to_tensor(eval_envs.return_queue, device=device).float().mean()
         / eval_envs.max_episode_steps,
-        success_once=common.to_tensor(eval_envs.success_once_queue, device=device)
-        .float()
-        .mean(),
-        success_at_end=common.to_tensor(eval_envs.success_at_end_queue, device=device)
-        .float()
-        .mean(),
+        success_once=common.to_tensor(eval_envs.success_once_queue, device=device).float().mean(),
+        success_at_end=common.to_tensor(eval_envs.success_at_end_queue, device=device).float().mean(),
         len=common.to_tensor(eval_envs.length_queue, device=device).float().mean(),
     )
     time_logs = timer.get_time_logs(pbar.last_print_n * cfg.eval_env.max_episode_steps)

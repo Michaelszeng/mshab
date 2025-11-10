@@ -46,7 +46,7 @@ algo:
   n_groups: 8                   # jigu says it is better to let each group have at least 8 channels; it seems 4 and 8 are similar
 
   # Dataset
-  data_dir_fp: ~/.manisill/data/scene_datasets/replica_cad_dataset/rearrange-dataset/tidy_hosue/pick
+  data_dir_fp: ~/.maniskill/data/scene_datasets/replica_cad_dataset/rearrange-dataset/tidy_hosue/pick
   trajs_per_obj: all
   max_image_cache_size: 0
   num_dataload_workers: 0
