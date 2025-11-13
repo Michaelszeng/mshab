@@ -6,7 +6,7 @@
 source /etc/profile
 module load anaconda/Python-ML-2025a
 wandb offline
-NUM_ENVS=189
+NUM_ENVS=504
 
 SEED=0
 
@@ -68,8 +68,8 @@ args=(
     "algo.num_minibatches=16"
     "algo.total_timesteps=100_000_000"
     "algo.eval_freq=null"
-    "algo.log_freq=500_000"
-    "algo.save_freq=500_000"
+    "algo.log_freq=50_000"
+    "algo.save_freq=250_000"
     "algo.save_backup_ckpts=True"
     "eval_env.make_env=True"
     "env.make_env=True"
