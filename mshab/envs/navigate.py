@@ -326,7 +326,6 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
             merged_articulation = Articulation.merge(
                 per_env_wrappers,
                 name=f"articulation-{subtask_num}",
-                merge_links=False,
             )
         else:
             merged_articulation = None
