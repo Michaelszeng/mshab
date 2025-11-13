@@ -1,5 +1,13 @@
 #!/usr/bin/bash
 
+
+# SuperCloud settings
+source /etc/profile
+module load anaconda/Python-ML-2025a
+wandb offline
+NUM_ENVS=189
+# NUM_ENVS=63
+
 SEED=0
 
 TASK=tidy_house
@@ -65,7 +73,7 @@ args=(
     "algo.save_backup_ckpts=True"
     "eval_env.make_env=True"
     "env.make_env=True"
-    "env.num_envs=63"
+    "env.num_envs=$NUM_ENVS"
     "eval_env.num_envs=63"
     "env.max_episode_steps=$max_episode_steps"
     "eval_env.max_episode_steps=$max_episode_steps"

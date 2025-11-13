@@ -213,6 +213,19 @@ goal_pos_wrt_base: The navigation target (position to move base to)
 ```
 
 
+### SuperCloud Installations
+Need a local installation of maniskill:
+```bash
+git clone https://github.com/haosulab/ManiSkill.git -b mshab --single-branch
+```
+
+```bash
+module load anaconda/Python-ML-2025a
+pip install -e ManiSkill  # run this from the directory in which you cloned maniskill
+pip install -e .  # from inside mshab directory
+pip install -e .[train]  # from inside mshab directory
+```
+
 
 ## Setup and Installation
 
