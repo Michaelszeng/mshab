@@ -298,17 +298,36 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
         )
 
         if art_ids:
-            merged_articulation = Articulation.create_from_physx_articulations(
-                [
-                    self._get_articulation_entity(f"env-{env_num}_{aid}", env_num)
-                    for env_num, aid in zip(art_sis, art_ids)
-                ],
-                scene=self.scene,
-                scene_idxs=torch.tensor(art_sis, dtype=torch.int),
-                _merged=True,
-                _process_links=False,  # allow merging articulations with differing link counts/dofs
+            # merged_articulation = Articulation.create_from_physx_articulations(
+            #     [
+            #         self._get_articulation_entity(f"env-{env_num}_{aid}", env_num)
+            #         for env_num, aid in zip(art_sis, art_ids)
+            #     ],
+            #     scene=self.scene,
+            #     scene_idxs=torch.tensor(art_sis, dtype=torch.int),
+            #     _merged=True,
+            # )
+            # merged_articulation.name = f"articulation-{subtask_num}"
+
+            # ATTEMPTED FIX:
+            # Each articulation may have a different number of links.
+            # Wrap them individually (single-env wrapper ⇒ passes identical-links assertion),
+            # then merge the resulting wrappers, which allows heterogeneous articulations.
+            per_env_wrappers = []
+            for env_num, aid in zip(art_sis, art_ids):
+                art_entity = self._get_articulation_entity(f"env-{env_num}_{aid}", env_num)
+                wrapper = Articulation.create_from_physx_articulations(
+                    [art_entity],
+                    scene=self.scene,
+                    scene_idxs=torch.tensor([env_num], dtype=torch.int),
+                )
+                per_env_wrappers.append(wrapper)
+
+            merged_articulation = Articulation.merge(
+                per_env_wrappers,
+                name=f"articulation-{subtask_num}",
+                merge_links=False,
             )
-            merged_articulation.name = f"articulation-{subtask_num}"
         else:
             merged_articulation = None
         self.subtask_articulations.append(merged_articulation)
