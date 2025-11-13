@@ -1,6 +1,6 @@
 #!/usr/bin/bash
 
-# LLsub ./train_ppo_navigate_supercloud.sh -s 20 -g volta:1
+# LLsub ./scripts/train_ppo_navigate_supercloud.sh -s 20 -g volta:1
 
 # SuperCloud settings
 source /etc/profile
@@ -68,8 +68,8 @@ args=(
     "algo.num_minibatches=16"
     "algo.total_timesteps=100_000_000"
     "algo.eval_freq=null"
-    "algo.log_freq=500_000"
-    "algo.save_freq=500_000"
+    "algo.log_freq=50_000"
+    "algo.save_freq=250_000"
     "algo.save_backup_ckpts=True"
     "eval_env.make_env=True"
     "env.make_env=True"
@@ -105,7 +105,7 @@ if [ -f "$resume_config" ] && [ -f "$resume_logdir/models/latest.pt" ]; then
         
 else
     echo "STARTING"
-    SAPIEN_NO_DISPLAY=1 python -m mshab.train_ppo configs/ppo_pick.yml \
+    SAPIEN_NO_DISPLAY=1 python -m mshab.train_ppo configs/ppo_navigate.yml \
         logger.clear_out="True" \
         logger.best_stats_cfg="{eval/success_once: 1, eval/return_per_step: 1}" \
         env.extra_stat_keys="${extra_stat_keys}" eval_env.extra_stat_keys="${extra_stat_keys}" \

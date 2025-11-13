@@ -6,19 +6,17 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional, Union
 
-from dacite import from_dict
-from omegaconf import OmegaConf
-
 import gymnasium as gym
 
+# ManiSkill specific imports
+import mani_skill.envs
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
-# ManiSkill specific imports
-import mani_skill.envs
+from dacite import from_dict
 from mani_skill.utils import common
+from omegaconf import OmegaConf
 
 from mshab.agents.ppo import Agent, DictArray
 from mshab.envs.make import EnvConfig, make_env
@@ -111,24 +109,18 @@ class TrainConfig:
     model_ckpt: Optional[Union[Path, int, str]] = None
 
     def __post_init__(self):
-        assert (
-            self.resume_logdir is None or not self.logger.clear_out
-        ), "Can't resume to a cleared out logdir!"
+        assert self.resume_logdir is None or not self.logger.clear_out, "Can't resume to a cleared out logdir!"
 
         if self.resume_logdir is not None:
             self.resume_logdir = Path(self.resume_logdir)
             old_config_path = self.resume_logdir / "config.yml"
             if old_config_path.absolute() == Path(PASSED_CONFIG_PATH).absolute():
-                assert (
-                    self.resume_logdir == self.logger.exp_path
-                ), "if setting resume_logdir, must set logger workspace and exp_name accordingly"
-            else:
-                assert (
-                    old_config_path.exists()
-                ), f"Couldn't find old config at path {old_config_path}"
-                old_config = get_mshab_train_cfg(
-                    parse_cfg(default_cfg_path=old_config_path)
+                assert self.resume_logdir == self.logger.exp_path, (
+                    "if setting resume_logdir, must set logger workspace and exp_name accordingly"
                 )
+            else:
+                assert old_config_path.exists(), f"Couldn't find old config at path {old_config_path}"
+                old_config = get_mshab_train_cfg(parse_cfg(default_cfg_path=old_config_path))
                 self.logger.workspace = old_config.logger.workspace
                 self.logger.exp_path = old_config.logger.exp_path
                 self.logger.log_path = old_config.logger.log_path
@@ -186,9 +178,7 @@ def train(cfg: TrainConfig):
             cfg.eval_env,
             video_path=cfg.logger.eval_video_path,
         )
-    assert isinstance(
-        envs.single_action_space, gym.spaces.Box
-    ), "only continuous action space is supported"
+    assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
     print("made", flush=True)
 
@@ -196,15 +186,11 @@ def train(cfg: TrainConfig):
     if cfg.algo.eval_freq:
         eval_obs, _ = eval_envs.reset(seed=cfg.seed + 1_000_000)
 
-    agent = Agent(
-        sample_obs=next_obs, single_act_shape=envs.single_action_space.shape
-    ).to(device)
+    agent = Agent(sample_obs=next_obs, single_act_shape=envs.single_action_space.shape).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=cfg.algo.learning_rate, eps=1e-5)
 
     def save(save_path):
-        torch.save(
-            dict(agent=agent.state_dict(), optimizer=optimizer.state_dict()), save_path
-        )
+        torch.save(dict(agent=agent.state_dict(), optimizer=optimizer.state_dict()), save_path)
 
     def load(load_path):
         checkpoint = torch.load(load_path)
@@ -230,9 +216,7 @@ def train(cfg: TrainConfig):
         envs.single_observation_space,
         device=device,
     )
-    actions = torch.zeros(
-        (cfg.algo.num_steps, cfg.algo.num_envs) + envs.single_action_space.shape
-    ).to(device)
+    actions = torch.zeros((cfg.algo.num_steps, cfg.algo.num_envs) + envs.single_action_space.shape).to(device)
     logprobs = torch.zeros((cfg.algo.num_steps, cfg.algo.num_envs)).to(device)
     rewards = torch.zeros((cfg.algo.num_steps, cfg.algo.num_envs)).to(device)
     dones = torch.zeros((cfg.algo.num_steps, cfg.algo.num_envs)).to(device)
@@ -247,9 +231,7 @@ def train(cfg: TrainConfig):
     timer = NonOverlappingTimeProfiler()
 
     def check_freq(freq):
-        return (global_step % freq < cfg.algo.batch_size) or (
-            iteration == cfg.algo.num_iterations - 1
-        )
+        return (global_step % freq < cfg.algo.batch_size) or (iteration == cfg.algo.num_iterations - 1)
 
     def store_env_stats(key):
         assert key in ["eval", "train"]
@@ -259,39 +241,43 @@ def train(cfg: TrainConfig):
             log_env = envs
         logger.store(
             key,
-            return_per_step=common.to_tensor(log_env.return_queue, device=device)
-            .float()
-            .mean()
+            return_per_step=common.to_tensor(log_env.return_queue, device=device).float().mean()
             / log_env.max_episode_steps,
-            success_once=common.to_tensor(log_env.success_once_queue, device=device)
-            .float()
-            .mean(),
-            success_at_end=common.to_tensor(log_env.success_at_end_queue, device=device)
-            .float()
-            .mean(),
+            success_once=common.to_tensor(log_env.success_once_queue, device=device).float().mean(),
+            success_at_end=common.to_tensor(log_env.success_at_end_queue, device=device).float().mean(),
             len=common.to_tensor(log_env.length_queue, device=device).float().mean(),
         )
         extra_stat_logs = dict()
+        # Convert list -> tensor once for episode lengths so we can index efficiently
+        if len(log_env.length_queue):
+            ep_lengths = torch.tensor(log_env.length_queue, device=device, dtype=torch.long)
+        else:
+            ep_lengths = torch.tensor([], device=device, dtype=torch.long)
+
         for k, v in log_env.extra_stats.items():
-            extra_stat_values = torch.stack(v)
-            extra_stat_logs[f"{k}_once"] = torch.mean(
-                torch.any(extra_stat_values, dim=1).float()
-            )
-            extra_stat_logs[f"{k}_at_end"] = torch.mean(
-                extra_stat_values[..., -1].float()
-            )
+            # v is a list of (max_ep_len,) tensors, one per completed episode
+            extra_stat_values = torch.stack(v)  # (num_eps, max_ep_len)
+
+            # 1. did the event occur at least once during the episode?
+            extra_stat_logs[f"{k}_once"] = torch.mean(torch.any(extra_stat_values, dim=1).float())
+
+            # 2. did the event hold on the final real step?  (fixes padding bug)
+            if ep_lengths.numel():
+                # clamp to >=1 then subtract 1 for zero-based index
+                last_indices = ep_lengths.clamp(min=1) - 1
+                last_vals = extra_stat_values[torch.arange(last_indices.size(0), device=device), last_indices]
+                extra_stat_logs[f"{k}_at_end"] = torch.mean(last_vals.float())
+            else:
+                extra_stat_logs[f"{k}_at_end"] = torch.tensor(0.0, device=device)
         logger.store(f"extra/{key}", **extra_stat_logs)
         log_env.reset_queues()
 
     for iteration in range(cfg.algo.num_iterations):
-
         if global_step > cfg.algo.total_timesteps:
             break
 
         logger.print(f"Epoch: {iteration}, {global_step=}", flush=True)
-        final_values = torch.zeros(
-            (cfg.algo.num_steps, cfg.algo.num_envs), device=device
-        )
+        final_values = torch.zeros((cfg.algo.num_steps, cfg.algo.num_envs), device=device)
         agent.eval()
 
         # ---------------------------------------------------------------------------------------------
@@ -315,9 +301,7 @@ def train(cfg: TrainConfig):
         if check_freq(cfg.algo.log_freq) and iteration > 0:
             store_env_stats("train")
             if iteration > 0:
-                logger.store(
-                    "time", **timer.get_time_logs(global_step - global_start_step)
-                )
+                logger.store("time", **timer.get_time_logs(global_step - global_start_step))
             logger.log(global_step)
             timer.end("log")
 
@@ -328,9 +312,7 @@ def train(cfg: TrainConfig):
             eval_envs.reset()
             for _ in range(eval_envs.max_episode_steps):
                 with torch.no_grad():
-                    eval_obs, _, _, _, _ = eval_envs.step(
-                        agent.get_action(eval_obs, deterministic=True)
-                    )
+                    eval_obs, _, _, _, _ = eval_envs.step(agent.get_action(eval_obs, deterministic=True))
             store_env_stats("eval")
             logger.log(global_step)
 
@@ -358,12 +340,10 @@ def train(cfg: TrainConfig):
 
             if "final_info" in infos:
                 done_mask = infos["_final_info"]
-                infos["final_observation"] = recursive_slice(
-                    infos["final_observation"], done_mask
-                )
-                final_values[
-                    step, torch.arange(cfg.algo.num_envs, device=device)[done_mask]
-                ] = agent.get_value(infos["final_observation"]).view(-1)
+                infos["final_observation"] = recursive_slice(infos["final_observation"], done_mask)
+                final_values[step, torch.arange(cfg.algo.num_envs, device=device)[done_mask]] = agent.get_value(
+                    infos["final_observation"]
+                ).view(-1)
 
         timer.end("sim_sample")
 
@@ -381,9 +361,7 @@ def train(cfg: TrainConfig):
                 else:
                     next_not_done = 1.0 - dones[t + 1]
                     nextvalues = values[t + 1]
-                real_next_values = (
-                    next_not_done * nextvalues + final_values[t]
-                )  # t instead of t+1
+                real_next_values = next_not_done * nextvalues + final_values[t]  # t instead of t+1
                 # next_not_done means nextvalues is computed from the correct next_obs
                 # if next_not_done is 1, final_values is always 0
                 # if next_not_done is 0, then use final_values, which is computed according to bootstrap_at_done
@@ -405,26 +383,16 @@ def train(cfg: TrainConfig):
                     value_term_sum = value_term_sum * next_not_done
 
                     lam_coef_sum = 1 + cfg.algo.gae_lambda * lam_coef_sum
-                    reward_term_sum = (
-                        cfg.algo.gae_lambda * cfg.algo.gamma * reward_term_sum
-                        + lam_coef_sum * rewards[t]
-                    )
+                    reward_term_sum = cfg.algo.gae_lambda * cfg.algo.gamma * reward_term_sum + lam_coef_sum * rewards[t]
                     value_term_sum = (
-                        cfg.algo.gae_lambda * cfg.algo.gamma * value_term_sum
-                        + cfg.algo.gamma * real_next_values
+                        cfg.algo.gae_lambda * cfg.algo.gamma * value_term_sum + cfg.algo.gamma * real_next_values
                     )
 
-                    advantages[t] = (
-                        reward_term_sum + value_term_sum
-                    ) / lam_coef_sum - values[t]
+                    advantages[t] = (reward_term_sum + value_term_sum) / lam_coef_sum - values[t]
                 else:
                     delta = rewards[t] + cfg.algo.gamma * real_next_values - values[t]
                     advantages[t] = lastgaelam = (
-                        delta
-                        + cfg.algo.gamma
-                        * cfg.algo.gae_lambda
-                        * next_not_done
-                        * lastgaelam
+                        delta + cfg.algo.gamma * cfg.algo.gae_lambda * next_not_done * lastgaelam
                     )  # Here actually we should use next_not_terminated, but we don't have lastgamlam if terminated
             returns = advantages + values
 
@@ -452,9 +420,7 @@ def train(cfg: TrainConfig):
                 end = start + cfg.algo.minibatch_size
                 mb_inds = b_inds[start:end]
 
-                _, newlogprob, entropy, newvalue = agent.get_action_and_value(
-                    b_obs[mb_inds], b_actions[mb_inds]
-                )
+                _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
                 logratio = newlogprob - b_logprobs[mb_inds]
                 ratio = logratio.exp()
 
@@ -462,24 +428,18 @@ def train(cfg: TrainConfig):
                     # calculate approx_kl http://joschu.net/blog/kl-approx.html
                     old_approx_kl = (-logratio).mean()
                     approx_kl = ((ratio - 1) - logratio).mean()
-                    clipfracs += [
-                        ((ratio - 1.0).abs() > cfg.algo.clip_coef).float().mean().item()
-                    ]
+                    clipfracs += [((ratio - 1.0).abs() > cfg.algo.clip_coef).float().mean().item()]
 
                 if cfg.algo.target_kl is not None and approx_kl > cfg.algo.target_kl:
                     break
 
                 mb_advantages = b_advantages[mb_inds]
                 if cfg.algo.norm_adv:
-                    mb_advantages = (mb_advantages - mb_advantages.mean()) / (
-                        mb_advantages.std() + 1e-8
-                    )
+                    mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
 
                 # Policy loss
                 pg_loss1 = -mb_advantages * ratio
-                pg_loss2 = -mb_advantages * torch.clamp(
-                    ratio, 1 - cfg.algo.clip_coef, 1 + cfg.algo.clip_coef
-                )
+                pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - cfg.algo.clip_coef, 1 + cfg.algo.clip_coef)
                 pg_loss = torch.max(pg_loss1, pg_loss2).mean()
 
                 # Value loss
@@ -498,11 +458,7 @@ def train(cfg: TrainConfig):
                     v_loss = 0.5 * ((newvalue - b_returns[mb_inds]) ** 2).mean()
 
                 entropy_loss = entropy.mean()
-                loss = (
-                    pg_loss
-                    - cfg.algo.ent_coef * entropy_loss
-                    + v_loss * cfg.algo.vf_coef
-                )
+                loss = pg_loss - cfg.algo.ent_coef * entropy_loss + v_loss * cfg.algo.vf_coef
 
                 optimizer.zero_grad()
                 loss.backward()

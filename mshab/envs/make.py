@@ -3,7 +3,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 import gymnasium as gym
-
 import mani_skill.envs
 from mani_skill.vector.wrappers.gymnasium import ManiSkillVectorEnv
 
@@ -28,15 +27,33 @@ def recursive_fix_env_kwargs(env_kwargs, inplace=False):
             return env_kwargs
         return dict((k, recursive_fix_env_kwargs(v)) for k, v in env_kwargs.items())
     if isinstance(env_kwargs, str):
+        # Support common string encodings used by command-line overrides
         if env_kwargs == "None":
             return None
         if env_kwargs == "True":
             return True
         if env_kwargs == "False":
             return False
+
+        # Old custom <list>a,b</list> encoding
         if "<list>" in env_kwargs and "</list>" in env_kwargs:
             env_kwargs = env_kwargs.replace("<list>", "").replace("</list>", "")
             env_kwargs = [x.strip() for x in env_kwargs.split(",")]
+
+        # NEW: JSON-style list or comma-separated list between brackets, e.g. '["a","b"]' or '[a,b]'
+        elif env_kwargs.startswith("[") and env_kwargs.endswith("]"):
+            # Remove the brackets and split by comma respecting quotes
+            # Try json first (works for '["a", "b"]')
+            import json
+            import re
+
+            try:
+                env_kwargs = json.loads(env_kwargs)
+            except json.JSONDecodeError:
+                # Fall back to simple comma split and strip brackets
+                inner = env_kwargs[1:-1]
+                env_kwargs = [re.sub(r'^\s*["\']?(.*?)["\']?\s*$', r"\\1", x) for x in inner.split(",") if x.strip()]
+
     return env_kwargs
 
 
@@ -89,12 +106,8 @@ def make_env(
 ):
     if env_cfg.task_plan_fp is not None:
         plan_data = plan_data_from_file(env_cfg.task_plan_fp)
-        env_cfg.env_kwargs["task_plans"] = env_cfg.env_kwargs.pop(
-            "task_plans", plan_data.plans
-        )
-        env_cfg.env_kwargs["scene_builder_cls"] = env_cfg.env_kwargs.pop(
-            "scene_builder_cls", plan_data.dataset
-        )
+        env_cfg.env_kwargs["task_plans"] = env_cfg.env_kwargs.pop("task_plans", plan_data.plans)
+        env_cfg.env_kwargs["scene_builder_cls"] = env_cfg.env_kwargs.pop("scene_builder_cls", plan_data.dataset)
     if env_cfg.spawn_data_fp is not None:
         env_cfg.env_kwargs["spawn_data_fp"] = env_cfg.spawn_data_fp
     env = gym.make(
@@ -114,18 +127,12 @@ def make_env(
     for wrapper in wrappers:
         env = wrapper(env)
 
-    env = FetchDepthObservationWrapper(
-        env, cat_state=env_cfg.cat_state, cat_pixels=env_cfg.cat_pixels
-    )
+    env = FetchDepthObservationWrapper(env, cat_state=env_cfg.cat_state, cat_pixels=env_cfg.cat_pixels)
     if env_cfg.frame_stack is not None:
         env = FrameStack(
             env,
             num_stack=env_cfg.frame_stack,
-            stacking_keys=(
-                ["all_depth"]
-                if env_cfg.cat_pixels
-                else ["fetch_head_depth", "fetch_hand_depth"]
-            ),
+            stacking_keys=(["all_depth"] if env_cfg.cat_pixels else ["fetch_head_depth", "fetch_hand_depth"]),
         )
     elif env_cfg.stack is not None:
         env = StackedDictObservationWrapper(env, num_stack=env_cfg.stack)
@@ -144,10 +151,7 @@ def make_env(
             save_video_trigger = (
                 None
                 if env_cfg.save_video_freq is None
-                else (
-                    lambda x: (x // env_cfg.max_episode_steps) % env_cfg.save_video_freq
-                    == 0
-                )
+                else (lambda x: (x // env_cfg.max_episode_steps) % env_cfg.save_video_freq == 0)
             )
             env = RecordEpisode(
                 env,

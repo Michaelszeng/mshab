@@ -59,9 +59,9 @@ args=(
     "algo.update_epochs=8"
     "algo.num_minibatches=16"
     "algo.total_timesteps=100_000_000"
-    "algo.eval_freq=null"
-    "algo.log_freq=500_000"
-    "algo.save_freq=500_000"
+    "algo.eval_freq=500_000"
+    "algo.log_freq=50_000"
+    "algo.save_freq=250_000"
     "algo.save_backup_ckpts=True"
     "eval_env.make_env=True"
     "env.make_env=True"
@@ -75,7 +75,7 @@ args=(
     "env.continuous_task=False"
     "env.record_video=False"
     "env.info_on_video=False"
-    "eval_env.record_video=False"
+    "eval_env.record_video=True"
     "eval_env.info_on_video=True"
     "eval_env.save_video_freq=10"
     "logger.wandb=$WANDB"
@@ -97,7 +97,7 @@ if [ -f "$resume_config" ] && [ -f "$resume_logdir/models/latest.pt" ]; then
         
 else
     echo "STARTING"
-    SAPIEN_NO_DISPLAY=1 python -m mshab.train_ppo configs/ppo_pick.yml \
+    SAPIEN_NO_DISPLAY=1 python -m mshab.train_ppo configs/ppo_navigate.yml \
         logger.clear_out="True" \
         logger.best_stats_cfg="{eval/success_once: 1, eval/return_per_step: 1}" \
         env.extra_stat_keys="${extra_stat_keys}" eval_env.extra_stat_keys="${extra_stat_keys}" \

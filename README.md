@@ -78,61 +78,60 @@ l_gripper_finger_joint
 1. PICK (lines 983-1033 in sequential_task.py)
 Goal: Grasp object and return to rest position
 Success requires ALL of:
-✅ is_grasped: Object is grasped (fingers holding it at max 30° angle)
-✅ ee_rest: End-effector at rest position (TCP close to resting pose)
-✅ robot_rest: Robot joints at rest configuration
-✅ is_static: Robot is still (velocities below threshold)
-✅ cumulative_force_within_limit: Total collision forces acceptable
-goal_pos_wrt_base: The rest position where gripper should return after grasping
+- ✅ is_grasped: Object is grasped (fingers holding it at max 30° angle)
+- ✅ ee_rest: End-effector at rest position (TCP close to resting pose)
+- ✅ robot_rest: Robot joints at rest configuration
+- ✅ is_static: Robot is still (velocities below threshold)
+- ✅ cumulative_force_within_limit: Total collision forces acceptable
+- goal_pos_wrt_base: The rest position where gripper should return after grasping
 
 2. PLACE (lines 1035-1086 in sequential_task.py)
 Goal: Place object at target location
 Success requires ALL of:
-✅ obj_at_goal: Object within threshold of goal position
-For "zone" goals: Object XY inside rectangle, Z within threshold
-For "cylinder" goals: Object XY within radius, Z within threshold
-For "sphere" goals: Object within 3D distance
-✅ not_grasped: Gripper released the object
-✅ ee_rest: End-effector returned to rest
-✅ robot_rest: Robot at rest configuration
-✅ is_static: Robot is still
-✅ cumulative_force_within_limit: Forces acceptable
-goal_pos_wrt_base: The target position where object should be placed (e.g., countertop location, table spot)
+- ✅ obj_at_goal: Object within threshold of goal position
+  - For "zone" goals: Object XY inside rectangle, Z within threshold
+  - For "cylinder" goals: Object XY within radius, Z within threshold
+  - For "sphere" goals: Object within 3D distance
+- ✅ not_grasped: Gripper released the object
+- ✅ ee_rest: End-effector returned to rest
+- ✅ robot_rest: Robot at rest configuration
+- ✅ is_static: Robot is still
+- ✅ cumulative_force_within_limit: Forces acceptable
+- goal_pos_wrt_base: The target position where object should be placed (e.g., countertop location, table spot)
 
 3. OPEN (lines 1301-1357 in sequential_task.py)
 Goal: Open articulated object (fridge, cabinet, drawer)
 Success requires ALL of:
-✅ articulation_open: Joint position > threshold (e.g., 80% of range)
-Fridge door: opened past threshold angle
-Drawer: pulled out past threshold distance
-✅ ee_rest: End-effector at rest
-✅ robot_rest: Robot at rest configuration
-✅ is_static: Robot is still
-✅ cumulative_force_within_limit: Forces acceptable
-goal_pos_wrt_base: The handle position to grasp (or zero-masked if not needed)
+- ✅ articulation_open: Joint position > threshold (e.g., 80% of range)
+  - Fridge door: opened past threshold angle
+  - Drawer: pulled out past threshold distance
+- ✅ ee_rest: End-effector at rest
+- ✅ robot_rest: Robot at rest configuration
+- ✅ is_static: Robot is still
+- ✅ cumulative_force_within_limit: Forces acceptable
+- goal_pos_wrt_base: The handle position to grasp (or zero-masked if not needed)
 
 4. CLOSE (similar to OPEN)
 Goal: Close articulated object
 Success requires ALL of:
-✅ articulation_closed: Joint position near minimum (< threshold)
-✅ ee_rest: End-effector at rest
-✅ robot_rest: Robot at rest configuration
-✅ is_static: Robot is still
-✅ cumulative_force_within_limit: Forces acceptable
-goal_pos_wrt_base: The handle position to grasp
+- ✅ articulation_closed: Joint position near minimum (< threshold)
+- ✅ ee_rest: End-effector at rest
+- ✅ robot_rest: Robot at rest configuration
+- ✅ is_static: Robot is still
+- ✅ cumulative_force_within_limit: Forces acceptable
+- goal_pos_wrt_base: The handle position to grasp
 
 5. NAVIGATE (lines 1192-1299 in sequential_task.py)
 Goal: Move to location near an object/articulation
 Success requires ALL of:
-✅ navigated_close: Base position near target (within threshold)
-✅ oriented_correctly: Robot facing the right direction
-✅ is_grasped ONLY IF obj is not None (carrying an object during navigation)
-✅ ee_rest: End-effector at rest
-✅ robot_rest: Robot at rest configuration
-✅ is_static: Robot is still
-✅ cumulative_force_within_limit: Forces acceptable
-✅ (Optional) is_grasped: If carrying an object, must still be grasping
-goal_pos_wrt_base: The navigation target (position to move base to)
+- ✅ navigated_close: Base position near target (within threshold)
+- ✅ oriented_correctly: Robot facing the right direction
+- ✅ is_grasped ONLY IF obj is not None (carrying an object during navigation)
+- ✅ ee_rest: End-effector at rest
+- ✅ robot_rest: Robot at rest configuration
+- ✅ is_static: Robot is still
+- ✅ cumulative_force_within_limit: Forces acceptable
+- goal_pos_wrt_base: The navigation target (position to move base to)
 
 
 ### Task Plan JSON Format
