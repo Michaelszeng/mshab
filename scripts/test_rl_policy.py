@@ -117,23 +117,8 @@ print(f"Checkpoint path: {ckpt_path}")
 print(f"Detected algorithm: {algo_cfg.name.upper()}")
 print(f"Environment observation space keys: {list(env.observation_space.spaces.keys())}")
 
-# Build the policy network and load weights
-dummy_obs, _ = env.reset()  # Reset env first to get observation structure
 
-if algo_cfg.name == "ppo":
-    policy = PPOAgent(dummy_obs, env.action_space.shape)
-    policy.load_state_dict(torch.load(ckpt_path, map_location=device)["agent"])
-    policy.to(device)
-    policy.eval()
-
-    def policy_act(obs_np):
-        """PPO: takes full obs dict"""
-        with torch.no_grad():
-            obs_tensor = to_tensor(obs_np, device=device, dtype="float")
-            act_tensor = policy.get_action(obs_tensor, deterministic=True)
-            return act_tensor.cpu().numpy()
-
-elif algo_cfg.name == "sac":
+if algo_cfg.name == "sac":
     # SAC needs pixel and state observation spaces
     obs_space = env.observation_space
 
@@ -236,5 +221,3 @@ if CONF != human_conf:
     )
 
     # add vector env wrappers here
-
-obs, info = env.reset()

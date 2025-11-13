@@ -1,3 +1,9 @@
+"""
+data (.h5 and .json) saved to mshab_exps/gen_data_save_trajectories/{task}/sequential/train/all/
+
+if RECORD_VIDEO is True, video saved to mshab_exps/gen_data_save_trajectories/{task}/sequential/train/all/eval_videos/
+"""
+
 import json
 import random
 import sys
@@ -8,23 +14,18 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from dacite import from_dict
-from omegaconf import OmegaConf
-from tqdm import tqdm
-
-from gymnasium import spaces
-
-import numpy as np
-import torch
-
 # ManiSkill specific imports
 import mani_skill.envs
+import numpy as np
+import torch
+from dacite import from_dict
+from gymnasium import spaces
 from mani_skill import ASSET_DIR
 from mani_skill import logger as ms_logger
 from mani_skill.utils import common
+from omegaconf import OmegaConf
+from tqdm import tqdm
 
-from mshab.agents.bc import Agent as BCAgent
-from mshab.agents.dp import Agent as DPAgent
 from mshab.agents.ppo import Agent as PPOAgent
 from mshab.agents.sac import Agent as SACAgent
 from mshab.envs.make import EnvConfig, make_env
@@ -34,7 +35,6 @@ from mshab.utils.array import recursive_slice, to_tensor
 from mshab.utils.config import parse_cfg
 from mshab.utils.logger import Logger, LoggerConfig
 from mshab.utils.time import NonOverlappingTimeProfiler
-
 
 if TYPE_CHECKING:
     from mshab.envs import SequentialTaskEnv
@@ -96,8 +96,10 @@ POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS = dict(
             navigate=["all"],
         ),
         set_table=dict(
-            pick=["013_apple", "024_bowl", "all"],
-            place=["013_apple", "024_bowl", "all"],
+            # pick=["013_apple", "024_bowl", "all"],
+            # place=["013_apple", "024_bowl", "all"],
+            pick=["013_apple", "024_bowl"],
+            place=["013_apple", "024_bowl"],
             navigate=["all"],
             open=["fridge", "kitchen_counter"],
             close=["fridge", "kitchen_counter"],
@@ -105,22 +107,36 @@ POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS = dict(
     ),
 )
 
-NUM_ENVS = 189
-SEED = 2024
-MAX_TRAJECTORIES = 1000
+NUM_ENVS = 1  # Number of environments to run in parallel
+SEED = 0
+MAX_TRAJECTORIES = 1000  # Number of saved episodes (full sequential task attempts) that pass the filtering criteria
 
-DEMO_FILTER = "any"  # "any" | "success" | "min_success_subtasks"
-MIN_SUCCESS_SUBTASKS = None  # int if DEMO_FILTER == "min_success_subtasks"
+DEMO_FILTER = "success"  # "any" | "success" | "min_success_subtasks"
+MIN_SUCCESS_SUBTASKS = 6  # None or int if DEMO_FILTER == "min_success_subtasks"
 
 SAVE_TRAJECTORIES = True
-RECORD_VIDEO = False
+RECORD_VIDEO = True
 DEBUG_VIDEO_GEN = False
 
 POLICY_TYPE = "rl_per_obj"
 POLICY_KEY = "rl"
 
+human_conf = dict(
+    num_envs=1,
+    render_mode="human",
+    shader_dir="minimal",
+    env_kwargs=dict(
+        require_build_configs_repeated_equally_across_envs=False,
+    ),
+)
+default_conf = dict(
+    num_envs=NUM_ENVS,  # RCAD has 63 train scenes, so 252 envs -> 4 parallel envs reserved for each scene
+)
 
-def eval(task):
+CONF = human_conf
+
+
+def eval(task, task_plan_path):
     # timer
     timer = NonOverlappingTimeProfiler()
 
@@ -138,9 +154,9 @@ def eval(task):
     # -------------------------------------------------------------------------------------------------
 
     eval_env_cfg = EnvConfig(
+        **CONF,
         env_id="SequentialTask-v0",
         obs_mode="rgbd",
-        num_envs=NUM_ENVS,
         max_episode_steps=dict(
             tidy_house=200 * 10 + 500 * 10,
             prepare_groceries=200 * 6 + 500 * 6,
@@ -153,10 +169,7 @@ def eval(task):
         continuous_task=False,
         cat_state=True,
         cat_pixels=False,
-        task_plan_fp=(
-            ASSET_DIR
-            / f"scene_datasets/replica_cad_dataset/rearrange/task_plans/{task}/sequential/train/all.json"
-        ),
+        task_plan_fp=(ASSET_DIR / task_plan_path.replace("{task}", task)),
     )
     logger_cfg = LoggerConfig(
         workspace="mshab_exps",
@@ -222,23 +235,17 @@ def eval(task):
 
             self._control_step_start_time = time.time()
             self._cur_sim_step = 0
-            self._control_step_end_time = (
-                self._control_step_start_time + self.control_timestep
-            )
+            self._control_step_end_time = self._control_step_start_time + self.control_timestep
 
         def wrapped_after_simulation_step(self):
             _original_after_simulation_step()
             if getattr(self, "_control_step_start_time", None) is None:
                 self._control_step_start_time = time.time()
                 self._cur_sim_step = 0
-                self._control_step_end_time = (
-                    self._control_step_start_time + self.control_timestep
-                )
+                self._control_step_end_time = self._control_step_start_time + self.control_timestep
                 self._realtime_drift = 0
 
-            step_end_time = self._control_step_start_time + (
-                time_per_sim_step * (self._cur_sim_step + 1)
-            )
+            step_end_time = self._control_step_start_time + (time_per_sim_step * (self._cur_sim_step + 1))
             if time.time() < step_end_time:
                 if self.gpu_sim_enabled:
                     self.scene._gpu_fetch_all()
@@ -262,7 +269,6 @@ def eval(task):
     # AGENT
     # -------------------------------------------------------------------------------------------------
 
-    # TODO (arth): make this oop, originally this was easier but with 4 algos it's getting messy
     dp_action_history = deque([])
 
     def get_policy_act_fn(algo_cfg_path, algo_ckpt_path):
@@ -270,9 +276,7 @@ def eval(task):
         if algo_cfg.name == "ppo":
             policy = PPOAgent(eval_obs, act_space.shape)
             policy.eval()
-            policy.load_state_dict(
-                torch.load(algo_ckpt_path, map_location=device)["agent"]
-            )
+            policy.load_state_dict(torch.load(algo_ckpt_path, map_location=device)["agent"])
             policy.to(device)
             policy_act_fn = lambda obs: policy.get_action(obs, deterministic=True)
         elif algo_cfg.name == "sac":
@@ -311,9 +315,7 @@ def eval(task):
                 device=device,
             )
             policy.eval()
-            policy.load_state_dict(
-                torch.load(algo_ckpt_path, map_location=device)["agent"]
-            )
+            policy.load_state_dict(torch.load(algo_ckpt_path, map_location=device)["agent"])
             policy.to(device)
             policy_act_fn = lambda obs: policy.actor(
                 obs["pixels"],
@@ -331,28 +333,13 @@ def eval(task):
         mshab_ckpt_dir = Path("mshab_checkpoints")
 
     policies = dict()
-    for subtask_name, subtask_targs in POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS[POLICY_KEY][
-        task
-    ].items():
+    for subtask_name, subtask_targs in POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS[POLICY_KEY][task].items():
         policies[subtask_name] = dict()
         for targ_name in subtask_targs:
-            cfg_path = (
-                mshab_ckpt_dir
-                / POLICY_KEY
-                / task
-                / subtask_name
-                / targ_name
-                / "config.yml"
-            )
-            ckpt_path = (
-                mshab_ckpt_dir
-                / POLICY_KEY
-                / task
-                / subtask_name
-                / targ_name
-                / "policy.pt"
-            )
+            cfg_path = mshab_ckpt_dir / POLICY_KEY / task / subtask_name / targ_name / "config.yml"
+            ckpt_path = mshab_ckpt_dir / POLICY_KEY / task / subtask_name / targ_name / "policy.pt"
             policies[subtask_name][targ_name] = get_policy_act_fn(cfg_path, ckpt_path)
+    print(f"{policies=}")
 
     def act(obs):
         with torch.no_grad():
@@ -378,22 +365,12 @@ def eval(task):
 
                 # get targ names to query per-obj policies
                 sapien_obj_names = [None] * uenv.num_envs
-                for env_num, subtask_num in enumerate(
-                    torch.clip(subtask_pointer, max=len(uenv.task_plan) - 1)
-                ):
+                for env_num, subtask_num in enumerate(torch.clip(subtask_pointer, max=len(uenv.task_plan) - 1)):
                     subtask = uenv.task_plan[subtask_num]
-                    if isinstance(subtask, PickSubtask) or isinstance(
-                        subtask, PlaceSubtask
-                    ):
-                        sapien_obj_names[env_num] = (
-                            uenv.subtask_objs[subtask_num]._objs[env_num].name
-                        )
-                    elif isinstance(subtask, OpenSubtask) or isinstance(
-                        subtask, CloseSubtask
-                    ):
-                        sapien_obj_names[env_num] = (
-                            uenv.subtask_articulations[subtask_num]._objs[env_num].name
-                        )
+                    if isinstance(subtask, PickSubtask) or isinstance(subtask, PlaceSubtask):
+                        sapien_obj_names[env_num] = uenv.subtask_objs[subtask_num]._objs[env_num].name
+                    elif isinstance(subtask, OpenSubtask) or isinstance(subtask, CloseSubtask):
+                        sapien_obj_names[env_num] = uenv.subtask_articulations[subtask_num]._objs[env_num].name
                 targ_names = []
                 for sapien_on in sapien_obj_names:
                     if sapien_on is None:
@@ -406,11 +383,7 @@ def eval(task):
                 assert len(targ_names) == uenv.num_envs
 
                 # if policy_type == "rl_per_obj" or doing open/close env, need to query per-obj policy
-                if (
-                    POLICY_TYPE == "rl_per_obj"
-                    or torch.any(open_env_idx)
-                    or torch.any(close_env_idx)
-                ):
+                if POLICY_TYPE == "rl_per_obj" or torch.any(open_env_idx) or torch.any(close_env_idx):
                     tn_env_idxs = dict()
                     for env_num, tn in enumerate(targ_names):
                         if tn not in tn_env_idxs:
@@ -434,13 +407,11 @@ def eval(task):
                         for tn, targ_env_idx in tn_env_idxs.items():
                             subtask_targ_env_idx = subtask_env_idx & targ_env_idx
                             if torch.any(subtask_targ_env_idx):
-                                action[subtask_targ_env_idx] = policies[subtask_name][
-                                    tn
-                                ](recursive_slice(obs, subtask_targ_env_idx))
+                                action[subtask_targ_env_idx] = policies[subtask_name][tn](
+                                    recursive_slice(obs, subtask_targ_env_idx)
+                                )
                     else:
-                        action[subtask_env_idx] = policies[subtask_name]["all"](
-                            recursive_slice(obs, subtask_env_idx)
-                        )
+                        action[subtask_env_idx] = policies[subtask_name]["all"](recursive_slice(obs, subtask_env_idx))
 
                 if torch.any(pick_env_idx):
                     set_subtask_targ_policy_act("pick", pick_env_idx)
@@ -461,11 +432,9 @@ def eval(task):
 
     task_targ_names = set()
     for subtask_name in POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS["rl"][task]:
-        task_targ_names.update(
-            POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS["rl"][task][subtask_name]
-        )
+        task_targ_names.update(POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS["rl"][task][subtask_name])
 
-    eval_obs = to_tensor(eval_envs.reset(seed=SEED)[0], device=device, dtype="float")
+    eval_obs = to_tensor(eval_envs.reset(seed=SEED, options={})[0], device=device, dtype="float")
     subtask_fail_counts = defaultdict(int)
     last_subtask_pointer = uenv.subtask_pointer.clone()
     pbar = tqdm(range(MAX_TRAJECTORIES), total=MAX_TRAJECTORIES)
@@ -491,16 +460,24 @@ def eval(task):
     def update_fail_subtask_counts(done):
         if torch.any(done):
             subtask_nums = last_subtask_pointer[done]
-            for fail_subtask, num_envs in zip(
-                *np.unique(subtask_nums.cpu().numpy(), return_counts=True)
-            ):
+            total_subtasks = len(uenv.task_plan)
+            for fail_subtask, num_envs in zip(*np.unique(subtask_nums.cpu().numpy(), return_counts=True)):
                 subtask_fail_counts[fail_subtask] += num_envs
+                success_status = (
+                    "✓ SUCCESS"
+                    if fail_subtask >= total_subtasks
+                    else f"✗ FAILED at subtask {fail_subtask}/{total_subtasks}"
+                )
+                will_save = (
+                    DEMO_FILTER == "any"
+                    or (DEMO_FILTER == "min_success_subtasks" and fail_subtask >= MIN_SUCCESS_SUBTASKS)
+                    or (DEMO_FILTER == "success" and fail_subtask >= total_subtasks)
+                )
+                save_status = "[WILL SAVE]" if will_save else "[FILTERED OUT]"
+                print(f"\n📊 Env {env_idx} ended at step {step_num}: {success_status} {save_status}")
             with open(logger.exp_path / "subtask_fail_counts.json", "w+") as f:
                 json.dump(
-                    dict(
-                        (str(k), int(subtask_fail_counts[k]))
-                        for k in sorted(subtask_fail_counts.keys())
-                    ),
+                    dict((str(k), int(subtask_fail_counts[k])) for k in sorted(subtask_fail_counts.keys())),
                     f,
                 )
 
@@ -509,8 +486,62 @@ def eval(task):
         last_subtask_pointer = uenv.subtask_pointer.clone()
         action = act(eval_obs)
         timer.end("sample")
-        eval_obs, _, term, trunc, _ = eval_envs.step(action)
+        eval_obs, _, term, trunc, info = eval_envs.step(action)
         timer.end("sim_sample")
+
+        # Debug: Print subtask progression and success criteria every 100 steps
+        if step_num % 100 == 0:
+            curr_subtask = uenv.subtask_pointer[0].item()
+            print(f"\n{'=' * 80}")
+            print(f"[Step {step_num}] Subtask: {curr_subtask}/{len(uenv.task_plan)}")
+
+            # Print all success-related info
+            if "is_success" in info:
+                is_succ = info["is_success"]
+                is_succ_val = is_succ[0] if hasattr(is_succ, "__len__") else is_succ
+                print(f"  is_success: {is_succ_val}")
+
+            # Print success checkers if available
+            if "success" in info and isinstance(info["success"], dict):
+                print("  Success Checkers:")
+                for key, val in info["success"].items():
+                    val_display = val[0] if hasattr(val, "__len__") and len(val) > 0 else val
+                    print(f"    {key}: {val_display}")
+
+            # Print navigation-relevant info keys
+            print("  Navigation Criteria:")
+            nav_keys = [
+                "navigated_close",  # Navigation goal reached
+                "cumulative_force_within_limit",  # Force limits OK
+                "robot_cumulative_force",  # Current force value
+                "robot_rest",  # Robot at rest
+                "ee_rest",  # End effector at rest
+                "is_static",  # Environment static
+            ]
+            for key in nav_keys:
+                if key in info:
+                    val = info[key]
+                    val_display = val[0] if hasattr(val, "__len__") and len(val) > 0 else val
+                    print(f"    {key}: {val_display}")
+
+            # Print other relevant keys
+            other_keys = ["subtask", "subtask_type", "elapsed_steps", "subtasks_steps_left"]
+            for key in other_keys:
+                if key in info:
+                    val = info[key]
+                    val_display = val[0] if hasattr(val, "__len__") and len(val) > 0 else val
+                    print(f"  {key}: {val_display}")
+
+            print(f"{'=' * 80}")
+
+        # Debug: Print when subtask advances
+        if torch.any(uenv.subtask_pointer != last_subtask_pointer):
+            for env_idx in range(uenv.num_envs):
+                if uenv.subtask_pointer[env_idx] != last_subtask_pointer[env_idx]:
+                    old_st = last_subtask_pointer[env_idx].item()
+                    new_st = uenv.subtask_pointer[env_idx].item()
+                    print(f"✨ Env {env_idx}: Advanced from subtask {old_st} → {new_st}")
+
         eval_obs = to_tensor(
             eval_obs,
             device=device,
@@ -534,16 +565,10 @@ def eval(task):
 
     results_logs = dict(
         num_trajs=len(eval_envs.return_queue),
-        return_per_step=common.to_tensor(eval_envs.return_queue, device=device)
-        .float()
-        .mean()
+        return_per_step=common.to_tensor(eval_envs.return_queue, device=device).float().mean()
         / eval_envs.max_episode_steps,
-        success_once=common.to_tensor(eval_envs.success_once_queue, device=device)
-        .float()
-        .mean(),
-        success_at_end=common.to_tensor(eval_envs.success_at_end_queue, device=device)
-        .float()
-        .mean(),
+        success_once=common.to_tensor(eval_envs.success_once_queue, device=device).float().mean(),
+        success_at_end=common.to_tensor(eval_envs.success_at_end_queue, device=device).float().mean(),
         len=common.to_tensor(eval_envs.length_queue, device=device).float().mean(),
     )
     time_logs = timer.get_time_logs(pbar.last_print_n * eval_envs.max_episode_steps)
@@ -569,4 +594,4 @@ def eval(task):
 if __name__ == "__main__":
     import sys
 
-    eval(task=sys.argv[1])
+    eval(task=sys.argv[1], task_plan_path=sys.argv[2])

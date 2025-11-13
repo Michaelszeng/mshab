@@ -4,15 +4,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Literal, Optional, Union
 
-import h5py
-
 import gymnasium as gym
-
+import h5py
 import numpy as np
-import torch
-
 import sapien.physx as physx
-
+import torch
 from mani_skill import get_commit_info
 from mani_skill.envs.sapien_env import BaseEnv
 from mani_skill.utils import common, gym_utils, sapien_utils
@@ -29,9 +25,8 @@ from mani_skill.utils.wrappers import CPUGymWrapper
 from mshab.envs import SequentialTaskEnv
 from mshab.utils.io import NoIndent, NoIndentSupportingJSONEncoder
 
-
-# NOTE (stao): The code for record.py is quite messy and perhaps confusing as it is trying to support both recording on CPU and GPU seamlessly
-# and handle partial resets. It works but can be claned up a lot.
+# NOTE (stao): The code for record.py is quite messy and perhaps confusing as it is trying to support both recording on
+# CPU and GPU seamlessly and handle partial resets. It works but can be cleaned up a lot.
 
 
 def parse_env_info(env: gym.Env):
@@ -120,7 +115,6 @@ class Step:
 
 
 class RecordEpisodeSequentialTask(gym.Wrapper):
-
     def __init__(
         self,
         env: SequentialTaskEnv,
@@ -166,12 +160,12 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
         self.save_on_reset = save_on_reset
         self.save_trajectory = save_trajectory
         if self.base_env.num_envs > 1 and save_video:
-            assert (
-                max_steps_per_video is not None
-            ), "On GPU parallelized environments, \
+            assert max_steps_per_video is not None, (
+                "On GPU parallelized environments, \
                 there must be a given max steps per video value in order to flush videos in order \
                 to avoid issues caused by partial resets. If your environment does not do partial \
                 resets you may set max_steps_per_video equal to the max_episode_steps"
+            )
         self.clean_on_close = clean_on_close
         self.record_reward = record_reward
         self.record_env_state = record_env_state
@@ -189,9 +183,7 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
                 episodes=[],
             )
             if self._json_data["env_info"] is not None:
-                self._json_data["env_info"][
-                    "max_episode_steps"
-                ] = self.max_episode_steps
+                self._json_data["env_info"]["max_episode_steps"] = self.max_episode_steps
             if source_type is not None:
                 self._json_data["source_type"] = source_type
             if source_desc is not None:
@@ -275,9 +267,7 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
             img = img[None]
         if infos is not None:
             for i in range(len(img)):
-                info_item = {
-                    k: v if np.size(v) == 1 else v[i] for k, v in infos.items()
-                }
+                info_item = {k: v if np.size(v) == 1 else v[i] for k, v in infos.items()}
                 img[i] = put_info_on_image(img[i], info_item)
         if len(img.shape) > 3:
             if len(img) == 1:
@@ -293,18 +283,15 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
         options: Optional[dict] = dict(),
         **kwargs,
     ):
-
         if self.save_on_reset:
             if self.save_video and self.num_envs == 1:
                 self.flush_video()
             # if doing a full reset then we flush all trajectories including incompleted ones
             if self._trajectory_buffer is not None:
-                if "env_idx" not in options:
+                if options is None or "env_idx" not in options:
                     self.flush_trajectory(env_idxs_to_flush=np.arange(self.num_envs))
                 else:
-                    self.flush_trajectory(
-                        env_idxs_to_flush=common.to_numpy(options["env_idx"])
-                    )
+                    self.flush_trajectory(env_idxs_to_flush=common.to_numpy(options["env_idx"]))
 
         obs, info = super().reset(*args, seed=seed, options=options, **kwargs)
         self._first_step_info = info
@@ -314,9 +301,7 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
             self._trajectory_buffer = None
         if self.save_trajectory:
             state_dict = self.base_env.get_state_dict()
-            action = common.batch(
-                self.env.get_wrapper_attr("single_action_space").sample()
-            )
+            action = common.batch(self.env.get_wrapper_attr("single_action_space").sample())
             first_step_info = info.copy()
             first_step_info.pop("reconfigure")
             # check if state_dict is consistent
@@ -352,10 +337,11 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
             if self.record_env_state:
                 first_step.state = common.to_numpy(common.batch(state_dict))
             env_idx = np.arange(self.num_envs)
-            if "env_idx" in options:
+            if options is not None and "env_idx" in options:
                 env_idx = common.to_numpy(options["env_idx"])
             if self._trajectory_buffer is None:
-                # Initialize trajectory buffer on the first episode based on given observation (which should be generated after all wrappers)
+                # Initialize trajectory buffer on the first episode based on given observation (which should be
+                # generated after all wrappers)
                 self._trajectory_buffer = first_step
             else:
 
@@ -364,30 +350,23 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
                         x[-1, env_idx] = y[-1, env_idx]
                     else:
                         for k in x.keys():
-                            recursive_replace(x[k], y[k])
+                            if k in y:
+                                recursive_replace(x[k], y[k])
 
                 # TODO (stao): how do we store states from GPU sim of tasks with objects not in every sub-scene?
                 # Maybe we shouldn't?
                 if self.record_env_state:
                     recursive_replace(self._trajectory_buffer.state, first_step.state)
-                recursive_replace(
-                    self._trajectory_buffer.observation, first_step.observation
-                )
+                recursive_replace(self._trajectory_buffer.observation, first_step.observation)
                 recursive_replace(self._trajectory_buffer.info, first_step.info)
                 recursive_replace(self._trajectory_buffer.action, first_step.action)
                 if self.record_reward:
                     recursive_replace(self._trajectory_buffer.reward, first_step.reward)
-                recursive_replace(
-                    self._trajectory_buffer.terminated, first_step.terminated
-                )
-                recursive_replace(
-                    self._trajectory_buffer.truncated, first_step.truncated
-                )
+                recursive_replace(self._trajectory_buffer.terminated, first_step.terminated)
+                recursive_replace(self._trajectory_buffer.truncated, first_step.truncated)
                 recursive_replace(self._trajectory_buffer.done, first_step.done)
                 if self._trajectory_buffer.success is not None:
-                    recursive_replace(
-                        self._trajectory_buffer.success, first_step.success
-                    )
+                    recursive_replace(self._trajectory_buffer.success, first_step.success)
                 if self._trajectory_buffer.fail is not None:
                     recursive_replace(self._trajectory_buffer.fail, first_step.fail)
         if options is not None and "env_idx" in options:
@@ -416,9 +395,26 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
                 self._trajectory_buffer.observation,
                 common.to_numpy(common.batch(obs)),
             )
+
+            # Handle changing info dict structure across subtasks
+            batched_info = common.to_numpy(common.batch(info))
+            # Add missing keys from buffer to new info with zeros
+            for k in self._trajectory_buffer.info.keys():
+                if k not in batched_info:
+                    # Create zeros with same shape as existing data
+                    existing_shape = self._trajectory_buffer.info[k].shape
+                    batched_info[k] = np.zeros((1,) + existing_shape[1:], dtype=self._trajectory_buffer.info[k].dtype)
+            # Add new keys from info to buffer with zeros
+            for k in batched_info.keys():
+                if k not in self._trajectory_buffer.info:
+                    # Create zeros matching the existing trajectory length
+                    existing_len = len(self._trajectory_buffer.done)
+                    new_shape = (existing_len,) + batched_info[k].shape[1:]
+                    self._trajectory_buffer.info[k] = np.zeros(new_shape, dtype=batched_info[k].dtype)
+
             self._trajectory_buffer.info = common.append_dict_array(
                 self._trajectory_buffer.info,
-                common.to_numpy(common.batch(info)),
+                batched_info,
             )
 
             self._trajectory_buffer.action = common.append_dict_array(
@@ -461,14 +457,10 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
         if self.save_video:
             self._video_steps += 1
             if self.info_on_video:
-                scalar_info = gym_utils.extract_scalars_from_info(
-                    common.to_numpy(info), batch_size=self.num_envs
-                )
+                scalar_info = gym_utils.extract_scalars_from_info(common.to_numpy(info), batch_size=self.num_envs)
                 scalar_info["reward"] = common.to_numpy(rew)
                 if np.size(scalar_info["reward"]) > 1:
-                    scalar_info["reward"] = [
-                        float(rew) for rew in scalar_info["reward"]
-                    ]
+                    scalar_info["reward"] = [float(rew) for rew in scalar_info["reward"]]
                 else:
                     scalar_info["reward"] = float(scalar_info["reward"])
                 image = self.capture_image(scalar_info)
@@ -476,10 +468,7 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
                 image = self.capture_image()
 
             self.render_images.append(image)
-            if (
-                self.max_steps_per_video is not None
-                and self._video_steps >= self.max_steps_per_video
-            ):
+            if self.max_steps_per_video is not None and self._video_steps >= self.max_steps_per_video:
                 self.flush_video()
         self._elapsed_record_steps += 1
         return obs, rew, terminated, truncated, info
@@ -539,10 +528,7 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
 
                 if not has_success:
                     num_success_subtasks = np.max(subtask_nums)
-                    if (
-                        self.demo_filter == "min_success_subtasks"
-                        and num_success_subtasks < self.min_success_subtasks
-                    ):
+                    if self.demo_filter == "min_success_subtasks" and num_success_subtasks < self.min_success_subtasks:
                         continue
 
                     end_ptr -= len(subtask_nums) - np.argmax(subtask_nums)
@@ -554,10 +540,11 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
                 traj_id = "traj_{}".format(self._episode_id)
                 group = self._h5_file.create_group(traj_id, track_order=True)
 
-                def recursive_add_to_h5py(
-                    group: h5py.Group, data: Union[dict, Array], key
-                ):
-                    """simple recursive data insertion for nested data structures into h5py, optimizing for visual data as well"""
+                def recursive_add_to_h5py(group: h5py.Group, data: Union[dict, Array], key):
+                    """
+                    simple recursive data insertion for nested data structures into h5py, optimizing for visual data as
+                    well.
+                    """
                     if isinstance(data, dict):
                         subgrp = group.create_group(key, track_order=True)
                         for k in data.keys():
@@ -573,7 +560,7 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
                                 compression_opts=5,
                             )
                         elif key == "depth":
-                            # NOTE (stao): By default now cameras in ManiSkill return depth values of type uint16 for numpy
+                            # NOTE (stao): By default now cameras in ManiSkill return depth values of type uint16 for np
                             group.create_dataset(
                                 key,
                                 data=data[start_ptr:end_ptr, env_idx],
@@ -598,9 +585,7 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
 
                 # Observations need special processing
                 if isinstance(self._trajectory_buffer.observation, dict):
-                    recursive_add_to_h5py(
-                        group, self._trajectory_buffer.observation, "obs"
-                    )
+                    recursive_add_to_h5py(group, self._trajectory_buffer.observation, "obs")
                 elif isinstance(self._trajectory_buffer.observation, np.ndarray):
                     if self.cpu_wrapped_env:
                         group.create_dataset(
@@ -611,9 +596,7 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
                     else:
                         group.create_dataset(
                             "obs",
-                            data=self._trajectory_buffer.observation[
-                                start_ptr:end_ptr, env_idx
-                            ],
+                            data=self._trajectory_buffer.observation[start_ptr:end_ptr, env_idx],
                             dtype=self._trajectory_buffer.observation.dtype,
                         )
                 else:
@@ -654,12 +637,8 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
                     self._trajectory_buffer.action,
                     (slice(start_ptr + 1, end_ptr), env_idx),
                 )
-                terminated = self._trajectory_buffer.terminated[
-                    start_ptr + 1 : end_ptr, env_idx
-                ]
-                truncated = self._trajectory_buffer.truncated[
-                    start_ptr + 1 : end_ptr, env_idx
-                ]
+                terminated = self._trajectory_buffer.terminated[start_ptr + 1 : end_ptr, env_idx]
+                truncated = self._trajectory_buffer.truncated[start_ptr + 1 : end_ptr, env_idx]
                 if isinstance(self._trajectory_buffer.action, dict):
                     recursive_add_to_h5py(group, actions, "actions")
                 else:
@@ -670,35 +649,23 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
                 if self._trajectory_buffer.success is not None:
                     group.create_dataset(
                         "success",
-                        data=self._trajectory_buffer.success[
-                            start_ptr + 1 : end_ptr, env_idx
-                        ],
+                        data=self._trajectory_buffer.success[start_ptr + 1 : end_ptr, env_idx],
                         dtype=bool,
                     )
-                    episode_info.update(
-                        success=self._trajectory_buffer.success[end_ptr - 1, env_idx]
-                    )
+                    episode_info.update(success=self._trajectory_buffer.success[end_ptr - 1, env_idx])
                 if self._trajectory_buffer.fail is not None:
                     group.create_dataset(
                         "fail",
-                        data=self._trajectory_buffer.fail[
-                            start_ptr + 1 : end_ptr, env_idx
-                        ],
+                        data=self._trajectory_buffer.fail[start_ptr + 1 : end_ptr, env_idx],
                         dtype=bool,
                     )
-                    episode_info.update(
-                        fail=self._trajectory_buffer.fail[end_ptr - 1, env_idx]
-                    )
+                    episode_info.update(fail=self._trajectory_buffer.fail[end_ptr - 1, env_idx])
                 if self.record_env_state:
-                    recursive_add_to_h5py(
-                        group, self._trajectory_buffer.state, "env_states"
-                    )
+                    recursive_add_to_h5py(group, self._trajectory_buffer.state, "env_states")
                 if self.record_reward:
                     group.create_dataset(
                         "rewards",
-                        data=self._trajectory_buffer.reward[
-                            start_ptr + 1 : end_ptr, env_idx
-                        ],
+                        data=self._trajectory_buffer.reward[start_ptr + 1 : end_ptr, env_idx],
                         dtype=np.float32,
                     )
 
@@ -709,19 +676,26 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
                     encoder_cls=NoIndentSupportingJSONEncoder,
                     indent=2,
                 )
+
+                # Print save confirmation with file paths
+                num_steps = end_ptr - start_ptr - 1
+                print(f"💾 Saved trajectory {self._episode_id} ({num_steps} steps)")
+                if self.save_trajectory:
+                    # Get paths from h5_file filename
+                    h5_path = self._h5_file.filename
+                    json_path = h5_path.replace(".h5", ".json")
+                    print(f"   📁 H5 file: {h5_path}")
+                    print(f"   📄 JSON file: {json_path}")
+
                 if verbose:
                     if flush_count == 1:
                         print(f"Recorded episode {self._episode_id}")
                     else:
-                        print(
-                            f"Recorded episodes {self._episode_id - flush_count} to {self._episode_id}"
-                        )
+                        print(f"Recorded episodes {self._episode_id - flush_count} to {self._episode_id}")
 
         # truncate self._trajectory_buffer down to save memory
         if flush_count > 0:
-            self._trajectory_buffer.env_episode_ptr[env_idxs_to_flush] = (
-                len(self._trajectory_buffer.done) - 1
-            )
+            self._trajectory_buffer.env_episode_ptr[env_idxs_to_flush] = len(self._trajectory_buffer.done) - 1
             min_env_ptr = self._trajectory_buffer.env_episode_ptr.min()
             N = len(self._trajectory_buffer.done)
 
@@ -732,9 +706,7 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
             self._trajectory_buffer.observation = common.index_dict_array(
                 self._trajectory_buffer.observation, slice(min_env_ptr, N)
             )
-            self._trajectory_buffer.info = common.index_dict_array(
-                self._trajectory_buffer.info, slice(min_env_ptr, N)
-            )
+            self._trajectory_buffer.info = common.index_dict_array(self._trajectory_buffer.info, slice(min_env_ptr, N))
             self._trajectory_buffer.action = common.index_dict_array(
                 self._trajectory_buffer.action, slice(min_env_ptr, N)
             )
@@ -748,9 +720,7 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
             self._trajectory_buffer.truncated = common.index_dict_array(
                 self._trajectory_buffer.truncated, slice(min_env_ptr, N)
             )
-            self._trajectory_buffer.done = common.index_dict_array(
-                self._trajectory_buffer.done, slice(min_env_ptr, N)
-            )
+            self._trajectory_buffer.done = common.index_dict_array(self._trajectory_buffer.done, slice(min_env_ptr, N))
             if self._trajectory_buffer.success is not None:
                 self._trajectory_buffer.success = common.index_dict_array(
                     self._trajectory_buffer.success, slice(min_env_ptr, N)
@@ -790,10 +760,7 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
                 if suffix:
                     video_name += "_" + suffix
                 if self._avoid_overwriting_video:
-                    while (
-                        Path(self.output_dir)
-                        / (video_name.replace(" ", "_").replace("\n", "_") + ".mp4")
-                    ).exists():
+                    while (Path(self.output_dir) / (video_name.replace(" ", "_").replace("\n", "_") + ".mp4")).exists():
                         self._video_id += 1
                         video_name = "{}".format(self._video_id)
                         if suffix:
@@ -807,6 +774,11 @@ class RecordEpisodeSequentialTask(gym.Wrapper):
                 fps=self.video_fps,
                 verbose=verbose,
             )
+            # Print video save confirmation
+            video_path = Path(self.output_dir) / f"{video_name.replace(' ', '_').replace(chr(10), '_')}.mp4"
+            num_frames = len(self.render_images)
+            print(f"🎥 Saved video {self._video_id} ({num_frames} frames, {num_frames / self.video_fps:.1f}s)")
+            print(f"   📁 Video file: {video_path}")
         self._video_steps = 0
         self.render_images = []
 

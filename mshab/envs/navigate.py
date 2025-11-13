@@ -2,11 +2,9 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
-import trimesh
-
 import numpy as np
 import torch
-
+import trimesh
 from mani_skill import ASSET_DIR
 from mani_skill.utils import common
 from mani_skill.utils.geometry.rotation_conversions import (
@@ -57,11 +55,10 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
         restrict_articulation_target_area: bool = True,
         **kwargs,
     ):
-
         tp0 = task_plans[0]
-        assert len(tp0.subtasks) == 1 and isinstance(
-            tp0.subtasks[0], NavigateSubtask
-        ), f"Task plans for {self.__class__.__name__} must be one {NavigateSubtask.__name__} long"
+        assert len(tp0.subtasks) == 1 and isinstance(tp0.subtasks[0], NavigateSubtask), (
+            f"Task plans for {self.__class__.__name__} must be one {NavigateSubtask.__name__} long"
+        )
 
         self.subtask_cfg = self.navigate_cfg
         self.use_geodesic = dist_fn == "geodesic"
@@ -87,9 +84,7 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
         if self.use_geodesic:
             bcis = common.to_tensor(self.build_config_idxs, device=self.device)
             unique_bcis = bcis.unique()
-            build_configs = [
-                self.scene_builder.build_configs[bci] for bci in unique_bcis
-            ]
+            build_configs = [self.scene_builder.build_configs[bci] for bci in unique_bcis]
             self.env_idx_to_floor_map = torch.searchsorted(unique_bcis, bcis)
 
             # NOTE (arth): we precompute navigable floor amps and all-pairs distances
@@ -99,10 +94,7 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
                     trimesh.load(
                         Path(ASSET_DIR)
                         / "scene_datasets/replica_cad_dataset/configs/scenes"
-                        / (
-                            Path(bc).stem
-                            + f".{str(self.robot_uids)}.navigable_positions_simplified.obj"
-                        )
+                        / (Path(bc).stem + f".{str(self.robot_uids)}.navigable_positions_simplified.obj")
                     ).vertices,
                     device=self.device,
                 )
@@ -113,10 +105,7 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
                     np.load(
                         Path(ASSET_DIR)
                         / "scene_datasets/replica_cad_dataset/configs/scenes"
-                        / (
-                            Path(bc).stem
-                            + f".{str(self.robot_uids)}.navigable_positions_simplified_all_pairs_dist.npy"
-                        )
+                        / (Path(bc).stem + f".{str(self.robot_uids)}.navigable_positions_simplified_all_pairs_dist.npy")
                     ),
                     device=self.device,
                 )
@@ -139,41 +128,29 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
                 verts = floor_map_verts[i]
                 dists = floor_map_all_pairs_dists[i]
                 self.floor_map_verts[i, : verts.size(0)] = verts
-                self.floor_map_all_pairs_dists[i, : dists.size(0), : dists.size(1)] = (
-                    dists
-                )
+                self.floor_map_all_pairs_dists[i, : dists.size(0), : dists.size(1)] = dists
 
     def _apply_premade_spawns(self, env_idx, options: Dict):
         with torch.device(self.device):
             current_subtask = self.task_plan[0]
             batched_spawn_data = defaultdict(list)
-            spawn_selection_idxs = options.get(
-                "spawn_selection_idxs", [None] * env_idx.numel()
-            )
+            spawn_selection_idxs = options.get("spawn_selection_idxs", [None] * env_idx.numel())
             for env_num, subtask_uid, spawn_selection_idx in zip(
                 env_idx,
-                [
-                    current_subtask.composite_subtask_uids[env_num]
-                    for env_num in env_idx
-                ],
+                [current_subtask.composite_subtask_uids[env_num] for env_num in env_idx],
                 spawn_selection_idxs,
             ):
                 spawn_data: Dict[str, torch.Tensor] = self.spawn_data[subtask_uid]
                 for k, v in spawn_data.items():
                     if spawn_selection_idx is None:
-                        spawn_selection_idx = torch.randint(
-                            low=0, high=len(v), size=(1,)
-                        )
+                        spawn_selection_idx = torch.randint(low=0, high=len(v), size=(1,))
                         self.spawn_selection_idxs[env_num] = spawn_selection_idx.item()
                     elif isinstance(spawn_selection_idx, int):
                         self.spawn_selection_idxs[env_num] = spawn_selection_idx
                         spawn_selection_idx = [spawn_selection_idx]
                     batched_spawn_data[k].append(v[spawn_selection_idx])
             for k, v in batched_spawn_data.items():
-                if (
-                    self.subtask_articulations[0] is not None
-                    and k == "articulation_qpos"
-                ):
+                if self.subtask_articulations[0] is not None and k == "articulation_qpos":
                     articulation_qpos = torch.zeros(
                         (env_idx.numel(), self.subtask_articulations[0].max_dof),
                         device=self.device,
@@ -185,9 +162,7 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
                 else:
                     batched_spawn_data[k] = torch.cat(v, dim=0)
             if "robot_pos" in batched_spawn_data:
-                self.agent.robot.set_pose(
-                    Pose.create_from_pq(p=batched_spawn_data["robot_pos"])
-                )
+                self.agent.robot.set_pose(Pose.create_from_pq(p=batched_spawn_data["robot_pos"]))
             if "robot_qpos" in batched_spawn_data:
                 self.agent.robot.set_qpos(batched_spawn_data["robot_qpos"])
             subtask_obj = self.subtask_objs[0]
@@ -195,38 +170,23 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
                 # NOTE (arth): for the navigate subtask, the subtask_obj may not exist in all
                 #       envs we assume batched_spawn_data has shape (len(env_idx), ...), and
                 #       select only the dims applicable to the subtask_obj
-                obj_reset_idxs = tensor_intersection_idx(
-                    env_idx, subtask_obj._scene_idxs
-                )
+                obj_reset_idxs = tensor_intersection_idx(env_idx, subtask_obj._scene_idxs)
                 if self.gpu_sim_enabled:
                     self.scene._gpu_apply_all()
                     self.scene.px.gpu_update_articulation_kinematics()
                     self.scene._gpu_fetch_all()
                 subtask_obj.set_pose(
                     Pose.create(
-                        self.agent.tcp.pose.raw_pose[
-                            tensor_intersection(env_idx, subtask_obj._scene_idxs)
-                        ]
+                        self.agent.tcp.pose.raw_pose[tensor_intersection(env_idx, subtask_obj._scene_idxs)]
                     )  # NOTE (arth): use tcp.pose for spawning for slightly better accuracy
-                    * Pose.create(
-                        batched_spawn_data["obj_raw_pose_wrt_tcp"][obj_reset_idxs]
-                    )
+                    * Pose.create(batched_spawn_data["obj_raw_pose_wrt_tcp"][obj_reset_idxs])
                 )
             subtask_articulation = self.subtask_articulations[0]
-            if (
-                subtask_articulation is not None
-                and "articulation_qpos" in batched_spawn_data
-            ):
-                articulation_reset_idxs = tensor_intersection_idx(
-                    env_idx, subtask_articulation._scene_idxs
-                )
-                subtask_articulation.set_qpos(
-                    batched_spawn_data["articulation_qpos"][articulation_reset_idxs]
-                )
+            if subtask_articulation is not None and "articulation_qpos" in batched_spawn_data:
+                articulation_reset_idxs = tensor_intersection_idx(env_idx, subtask_articulation._scene_idxs)
+                subtask_articulation.set_qpos(batched_spawn_data["articulation_qpos"][articulation_reset_idxs])
                 subtask_articulation.set_qvel(
-                    torch.zeros_like(
-                        batched_spawn_data["articulation_qpos"][articulation_reset_idxs]
-                    )
+                    torch.zeros_like(batched_spawn_data["articulation_qpos"][articulation_reset_idxs])
                 )
                 if self.gpu_sim_enabled and len(env_idx) == self.num_envs:
                     self.scene._gpu_apply_all()
@@ -234,16 +194,12 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
                     self.scene.px.step()
                     self.scene._gpu_fetch_all()
             if self.merged_link is not None:
-                merged_link_reset_idxs = tensor_intersection_idx(
-                    env_idx, self.merged_link._scene_idxs
-                )
+                merged_link_reset_idxs = tensor_intersection_idx(env_idx, self.merged_link._scene_idxs)
                 if merged_link_reset_idxs.numel():
                     if self.gpu_sim_enabled:
                         self.scene._gpu_apply_all()
                         self.scene._gpu_fetch_all()
-                    goal_pose = Pose.create(
-                        self.subtask_goals[-1].pose.raw_pose[env_idx].clone()
-                    )
+                    goal_pose = Pose.create(self.subtask_goals[-1].pose.raw_pose[env_idx].clone())
                     goal_pose.p[merged_link_reset_idxs] = self.merged_link.pose.p[
                         tensor_intersection_idx(self.merged_link._scene_idxs, env_idx)
                     ]
@@ -274,9 +230,7 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
             if subtask.articulation_config is not None:
                 art_sis.append(i)
                 art_ids.append(subtask.articulation_config.articulation_id)
-            if subtask.goal_pos is None or (
-                subtask.obj_id is None and subtask.articulation_config is not None
-            ):
+            if subtask.goal_pos is None or (subtask.obj_id is None and subtask.articulation_config is not None):
                 assert subtask.articulation_config is not None
                 replace_goal_with_link_sis.append(i)
                 replace_goal_with_link_ids_num.append(
@@ -295,9 +249,7 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
                     ]
                 )
                 replace_goal_with_link_nav_yrange.append(
-                    dict(fridge=[-0.6, 0.6], kitchen_counter=[-0.6, 0.6])[
-                        subtask.articulation_config.articulation_type
-                    ]
+                    dict(fridge=[-0.6, 0.6], kitchen_counter=[-0.6, 0.6])[subtask.articulation_config.articulation_type]
                 )
             if subtask.remove_obj_id is not None:
                 remove_obj_sis.append(i)
@@ -305,10 +257,7 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
 
         if obj_ids:
             merged_obj = Actor.create_from_entities(
-                [
-                    self._get_actor_entity(actor_id=f"env-{i}_{oid}", env_num=i)
-                    for i, oid in zip(obj_sis, obj_ids)
-                ],
+                [self._get_actor_entity(actor_id=f"env-{i}_{oid}", env_num=i) for i, oid in zip(obj_sis, obj_ids)],
                 scene=self.scene,
                 scene_idxs=torch.tensor(obj_sis, dtype=torch.int),
             )
@@ -366,22 +315,14 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
         if replace_goal_with_link_ids_num:
             self.merged_link = Link.create(
                 [
-                    self._get_link_entity(
-                        f"env-{env_num}_{link_aid}", env_num, link_idx
-                    )
-                    for env_num, (link_aid, link_idx) in zip(
-                        replace_goal_with_link_sis, replace_goal_with_link_ids_num
-                    )
+                    self._get_link_entity(f"env-{env_num}_{link_aid}", env_num, link_idx)
+                    for env_num, (link_aid, link_idx) in zip(replace_goal_with_link_sis, replace_goal_with_link_ids_num)
                 ],
                 scene=self.scene,
                 scene_idxs=torch.tensor(replace_goal_with_link_sis, dtype=torch.int),
             )
-            self.nav_merged_link_xrange = torch.tensor(
-                replace_goal_with_link_nav_xrange, dtype=torch.float
-            )
-            self.nav_merged_link_yrange = torch.tensor(
-                replace_goal_with_link_nav_yrange, dtype=torch.float
-            )
+            self.nav_merged_link_xrange = torch.tensor(replace_goal_with_link_nav_xrange, dtype=torch.float)
+            self.nav_merged_link_yrange = torch.tensor(replace_goal_with_link_nav_yrange, dtype=torch.float)
         else:
             self.merged_link = None
 
@@ -402,15 +343,9 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
             )
         )
 
-    def _get_link_entity(
-        self, articulation_id: str, env_num: int, link_num: Optional[int] = None
-    ):
+    def _get_link_entity(self, articulation_id: str, env_num: int, link_num: Optional[int] = None):
         ms_articulation = self.scene_builder.articulations[articulation_id]
-        link = (
-            ms_articulation.links[link_num]
-            if link_num is not None
-            else ms_articulation.root
-        )
+        link = ms_articulation.links[link_num] if link_num is not None else ms_articulation.root
         return link._objs[link._scene_idxs.tolist().index(env_num)]
 
     # -------------------------------------------------------------------------------------------------
@@ -426,15 +361,9 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
         verts = self.floor_map_verts[self.env_idx_to_floor_map[env_idx]]
         dists = self.floor_map_all_pairs_dists[self.env_idx_to_floor_map[env_idx]]
 
-        _, a_closest_vert = torch.min(
-            torch.norm(agent_pos.unsqueeze(1) - verts, dim=2), dim=1
-        )
-        g_dist_to_vert, g_closest_vert = torch.min(
-            torch.norm(goal_pos.unsqueeze(1) - verts, dim=2), dim=1
-        )
-        a_vert_to_g_vert_dist = dists[
-            torch.arange(len(dists)), a_closest_vert, g_closest_vert
-        ]
+        _, a_closest_vert = torch.min(torch.norm(agent_pos.unsqueeze(1) - verts, dim=2), dim=1)
+        g_dist_to_vert, g_closest_vert = torch.min(torch.norm(goal_pos.unsqueeze(1) - verts, dim=2), dim=1)
+        a_vert_to_g_vert_dist = dists[torch.arange(len(dists)), a_closest_vert, g_closest_vert]
 
         # NOTE (arth): omit a_dist_to_vert since mesh has some gaps between vertices which agent might end up in
         return a_vert_to_g_vert_dist + g_dist_to_vert
@@ -446,15 +375,12 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
             return self._compute_geodesic_disance(env_idx)
         else:
             return torch.norm(
-                self.agent.base_link.pose.p[env_idx, :2]
-                - self.subtask_goals[0].pose.p[env_idx, :2],
+                self.agent.base_link.pose.p[env_idx, :2] - self.subtask_goals[0].pose.p[env_idx, :2],
                 dim=1,
             )
 
     def _is_navigated_close(self, env_idx: torch.Tensor, goal: Actor, _):
-        assert (
-            env_idx.numel() == self.num_envs
-        ), f"{self.__name__} should have nav in every env"
+        assert env_idx.numel() == self.num_envs, f"{self.__name__} should have nav in every env"
         navigated_close = (
             torch.norm(
                 goal.pose.p[env_idx, :2] - self.agent.base_link.pose.p[env_idx, :2],
@@ -464,10 +390,7 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
         )
 
         if self.merged_link is not None and self.restrict_articulation_target_area:
-            relative_pos_world = (
-                self.agent.base_link.pose.p[self.merged_link._scene_idxs]
-                - self.merged_link.pose.p
-            )
+            relative_pos_world = self.agent.base_link.pose.p[self.merged_link._scene_idxs] - self.merged_link.pose.p
 
             relative_pos_local = quaternion_apply(
                 quaternion_invert(self.merged_link.pose.q),
@@ -483,36 +406,22 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
 
         return navigated_close
 
-    def _is_grasping_partial_env_obj(
-        self, obj: Actor, env_idx, min_force=0.5, max_angle=85
-    ):
+    def _is_grasping_partial_env_obj(self, obj: Actor, env_idx, min_force=0.5, max_angle=85):
         with torch.device(self.device):
             is_grasped = torch.zeros(self.num_envs, dtype=torch.bool)
 
-            l_contact_forces = self.scene.get_pairwise_contact_forces(
-                self.agent_finger1_link, obj
-            )
-            r_contact_forces = self.scene.get_pairwise_contact_forces(
-                self.agent_finger2_link, obj
-            )
+            l_contact_forces = self.scene.get_pairwise_contact_forces(self.agent_finger1_link, obj)
+            r_contact_forces = self.scene.get_pairwise_contact_forces(self.agent_finger2_link, obj)
             lforce = torch.linalg.norm(l_contact_forces, axis=1)
             rforce = torch.linalg.norm(r_contact_forces, axis=1)
 
             # direction to open the gripper
-            ldirection = -self.agent_finger1_link.pose.to_transformation_matrix()[
-                ..., :3, 1
-            ]
-            rdirection = self.agent_finger2_link.pose.to_transformation_matrix()[
-                ..., :3, 1
-            ]
+            ldirection = -self.agent_finger1_link.pose.to_transformation_matrix()[..., :3, 1]
+            rdirection = self.agent_finger2_link.pose.to_transformation_matrix()[..., :3, 1]
             langle = common.compute_angle_between(ldirection, l_contact_forces)
             rangle = common.compute_angle_between(rdirection, r_contact_forces)
-            lflag = torch.logical_and(
-                lforce >= min_force, torch.rad2deg(langle) <= max_angle
-            )
-            rflag = torch.logical_and(
-                rforce >= min_force, torch.rad2deg(rangle) <= max_angle
-            )
+            lflag = torch.logical_and(lforce >= min_force, torch.rad2deg(langle) <= max_angle)
+            rflag = torch.logical_and(rforce >= min_force, torch.rad2deg(rangle) <= max_angle)
 
             is_grasped[obj._scene_idxs] = torch.logical_and(lflag, rflag)
             return is_grasped[env_idx]
@@ -551,9 +460,7 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
                 still_navigating &= begin_navigating
 
                 # nav dist reward
-                navigating_rew = 8 * (
-                    1 - torch.tanh(info["distance_from_goal"][still_navigating] / 10)
-                )
+                navigating_rew = 8 * (1 - torch.tanh(info["distance_from_goal"][still_navigating] / 10))
                 reward[still_navigating] += navigating_rew
 
                 # move forward when not done
@@ -561,9 +468,7 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
                     quaternion_invert(self.agent.base_link.pose.q[still_navigating]),
                     self.agent.base_link.linear_velocity[still_navigating],
                 )
-                still_navigating_vel_rew = 2 * torch.tanh(
-                    2 * ego_base_lin_vel[:, 0].clip(min=0)
-                )
+                still_navigating_vel_rew = 2 * torch.tanh(2 * ego_base_lin_vel[:, 0].clip(min=0))
                 reward[still_navigating] += still_navigating_vel_rew
 
                 # when done nav, give full from still_nav + 2
@@ -571,17 +476,13 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
 
                 if self.use_rot_rew:
                     # when done nav, orient towards obj
-                    done_navigating_not_oriented = (
-                        info["navigated_close"] & ~info["oriented_correctly"]
-                    )
+                    done_navigating_not_oriented = info["navigated_close"] & ~info["oriented_correctly"]
                     goal_pose_wrt_base = (
                         self.agent.base_link.pose[done_navigating_not_oriented].inv()
                         * self.subtask_goals[-1].pose[done_navigating_not_oriented]
                     )
                     targ = goal_pose_wrt_base.p[..., :2]
-                    uc_targ = targ / torch.norm(targ, dim=1).unsqueeze(-1).expand(
-                        *targ.shape
-                    )
+                    uc_targ = targ / torch.norm(targ, dim=1).unsqueeze(-1).expand(*targ.shape)
                     rots = torch.sign(uc_targ[..., 1]) * torch.arccos(uc_targ[..., 0])
                     oriented_correctly_rew = 2 * (1 - torch.tanh(torch.abs(rots) / 2))
                     reward[done_navigating_not_oriented] += oriented_correctly_rew
@@ -622,26 +523,37 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
                 # info["static_rew"] = x.clone()
 
             # collisions
-            step_no_col_rew = 5 * (
-                1
-                - torch.tanh(
-                    3 * (torch.clamp(0.005 * info["robot_force"], min=0.2) - 0.2)
-                )
-            )
+            step_no_col_rew = 5 * (1 - torch.tanh(3 * (torch.clamp(0.005 * info["robot_force"], min=0.2) - 0.2)))
             reward += step_no_col_rew
 
-            # encourage arm and torso in "resting" orientation
-            arm_to_resting_diff = torch.norm(
-                self.agent.robot.qpos[..., 3:-2] - self.resting_qpos,
-                dim=1,
-            )
-            arm_resting_orientation_rew = 2 * (1 - torch.tanh(arm_to_resting_diff / 5))
-            reward += arm_resting_orientation_rew
+            # ------------------------------------------------------------------
+            # Arm resting rewards
+            # ------------------------------------------------------------------
+            # 1) Sparse bonus: if every joint is within the robot_rest tolerance,
+            #    add a one-shot bonus each step. (info["robot_rest"] is a Bool tensor.)
+            reward += 2.0 * info["robot_rest"].float()
+
+            # 2) Dense shaping: penalise individual joint deviations rather than the
+            #    aggregate vector norm. Compute the mean absolute deviation so one
+            #    large-deviating joint hurts the reward more.
+            arm_joint_deviation = torch.abs(self.agent.robot.qpos[..., 3:-2] - self.resting_qpos)  # (N_envs, 7)
+            mean_abs_dev = torch.mean(arm_joint_deviation, dim=1)
+            # Scale: 0 dev → +2, 0.3 rad dev → +1, >1 rad dev asymptotically → 0
+            per_joint_rest_rew = 2 * (1 - torch.tanh(mean_abs_dev / 0.3))
+            reward += per_joint_rest_rew
+
+            # OLD ARM RESTING REWARDS
+            # # encourage arm and torso in "resting" orientation
+            # arm_to_resting_diff = torch.norm(
+            #     self.agent.robot.qpos[..., 3:-2] - self.resting_qpos,
+            #     dim=1,
+            # )
+            # arm_resting_orientation_rew = 2 * (1 - torch.tanh(arm_to_resting_diff / 5))
+            # reward += arm_resting_orientation_rew
+            # ------------------------------------------------------------------
 
             # enforce ee at rest
-            ee_to_rest_dist = torch.norm(
-                self.agent.tcp_pose.p - self.ee_rest_world_pose.p, dim=1
-            )
+            ee_to_rest_dist = torch.norm(self.agent.tcp_pose.p - self.ee_rest_world_pose.p, dim=1)
             ee_rest_rew = 2 * (1 - torch.tanh(3 * ee_to_rest_dist))
             reward += ee_rest_rew
 
@@ -653,9 +565,7 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
 
         return reward
 
-    def compute_normalized_dense_reward(
-        self, obs: Any, action: torch.Tensor, info: Dict
-    ):
+    def compute_normalized_dense_reward(self, obs: Any, action: torch.Tensor, info: Dict):
         max_reward = 28.0 if self.use_rot_rew else 26.0
         return self.compute_dense_reward(obs=obs, action=action, info=info) / max_reward
 

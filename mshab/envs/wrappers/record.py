@@ -4,13 +4,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional, Union
 
-import h5py
-
 import gymnasium as gym
-
+import h5py
 import numpy as np
 import torch
-
 from mani_skill import get_commit_info
 from mani_skill.utils import common, gym_utils
 from mani_skill.utils.io_utils import dump_json
@@ -134,7 +131,6 @@ class Step:
 
 
 class RecordEpisode(gym.Wrapper):
-
     def __init__(
         self,
         env: SequentialTaskEnv,
@@ -179,12 +175,12 @@ class RecordEpisode(gym.Wrapper):
         self.save_on_reset = save_on_reset
         self.save_trajectory = save_trajectory
         if self.base_env.num_envs > 1 and save_video:
-            assert (
-                max_steps_per_video is not None
-            ), "On GPU parallelized environments, \
+            assert max_steps_per_video is not None, (
+                "On GPU parallelized environments, \
                 there must be a given max steps per video value in order to flush videos in order \
                 to avoid issues caused by partial resets. If your environment does not do partial \
                 resets you may set max_steps_per_video equal to the max_episode_steps"
+            )
         self.clean_on_close = clean_on_close
         self.record_reward = record_reward
         self.record_env_state = record_env_state
@@ -202,9 +198,7 @@ class RecordEpisode(gym.Wrapper):
                 episodes=[],
             )
             if self._json_data["env_info"] is not None:
-                self._json_data["env_info"][
-                    "max_episode_steps"
-                ] = self.max_episode_steps
+                self._json_data["env_info"]["max_episode_steps"] = self.max_episode_steps
             if source_type is not None:
                 self._json_data["source_type"] = source_type
             if source_desc is not None:
@@ -320,18 +314,15 @@ class RecordEpisode(gym.Wrapper):
         options: Optional[dict] = dict(),
         **kwargs,
     ):
-
         if self.save_on_reset:
             if self.save_video and self.num_envs == 1:
                 self.flush_video()
             # if doing a full reset then we flush all trajectories including incompleted ones
             if self._trajectory_buffer is not None:
-                if "env_idx" not in options:
+                if options is None or "env_idx" not in options:
                     self.flush_trajectory(env_idxs_to_flush=np.arange(self.num_envs))
                 else:
-                    self.flush_trajectory(
-                        env_idxs_to_flush=common.to_numpy(options["env_idx"])
-                    )
+                    self.flush_trajectory(env_idxs_to_flush=common.to_numpy(options["env_idx"]))
 
         obs, info = super().reset(*args, seed=seed, options=options, **kwargs)
         self._first_step_info = info
@@ -367,7 +358,7 @@ class RecordEpisode(gym.Wrapper):
                 env_episode_ptr=np.zeros((self.num_envs,), dtype=int),
             )
             env_idx = np.arange(self.num_envs)
-            if "env_idx" in options:
+            if options is not None and "env_idx" in options:
                 env_idx = common.to_numpy(options["env_idx"])
             if self._trajectory_buffer is None:
                 # Initialize trajectory buffer on the first episode based on given observation (which should be generated after all wrappers)
@@ -385,27 +376,19 @@ class RecordEpisode(gym.Wrapper):
 
                 if self.record_env_state:
                     recursive_replace(self._trajectory_buffer.state, first_step.state)
-                recursive_replace(
-                    self._trajectory_buffer.observation, first_step.observation
-                )
+                recursive_replace(self._trajectory_buffer.observation, first_step.observation)
                 recursive_replace(self._trajectory_buffer.info, first_step.info)
                 recursive_replace(self._trajectory_buffer.action, first_step.action)
                 if self.record_reward:
                     recursive_replace(self._trajectory_buffer.reward, first_step.reward)
-                recursive_replace(
-                    self._trajectory_buffer.terminated, first_step.terminated
-                )
-                recursive_replace(
-                    self._trajectory_buffer.truncated, first_step.truncated
-                )
+                recursive_replace(self._trajectory_buffer.terminated, first_step.terminated)
+                recursive_replace(self._trajectory_buffer.truncated, first_step.truncated)
                 recursive_replace(self._trajectory_buffer.done, first_step.done)
                 if self._trajectory_buffer.success is not None:
-                    recursive_replace(
-                        self._trajectory_buffer.success, first_step.success
-                    )
+                    recursive_replace(self._trajectory_buffer.success, first_step.success)
                 if self._trajectory_buffer.fail is not None:
                     recursive_replace(self._trajectory_buffer.fail, first_step.fail)
-        if "env_idx" in options:
+        if options is not None and "env_idx" in options:
             options["env_idx"] = common.to_numpy(options["env_idx"])
         self.last_reset_kwargs = copy.deepcopy(dict(options=options, **kwargs))
         if seed is not None:
@@ -486,10 +469,7 @@ class RecordEpisode(gym.Wrapper):
                 )
             )
             self.render_images.append(image)
-            if (
-                self.max_steps_per_video is not None
-                and self._video_steps >= self.max_steps_per_video
-            ):
+            if self.max_steps_per_video is not None and self._video_steps >= self.max_steps_per_video:
                 self.flush_video()
         self._elapsed_record_steps += 1
         return obs, rew, terminated, truncated, info
@@ -529,32 +509,27 @@ class RecordEpisode(gym.Wrapper):
                 episode_info = dict()
 
                 if self.label_episode:
-                    episode_label, episode_events, episode_events_verbose = (
-                        get_episode_label_and_events(
-                            self.base_env.task_cfgs,
-                            common.index_dict_array(
-                                self._trajectory_buffer.success,
-                                (
-                                    slice(start_ptr + 1, end_ptr),
-                                    env_idx,
-                                ),
-                                inplace=False,
+                    episode_label, episode_events, episode_events_verbose = get_episode_label_and_events(
+                        self.base_env.task_cfgs,
+                        common.index_dict_array(
+                            self._trajectory_buffer.success,
+                            (
+                                slice(start_ptr + 1, end_ptr),
+                                env_idx,
                             ),
-                            # NOTE (arth): we disclude reset infos for episode labeling
-                            common.index_dict_array(
-                                self._trajectory_buffer.info,
-                                (
-                                    slice(start_ptr + 1, end_ptr),
-                                    env_idx,
-                                ),
-                                inplace=False,
+                            inplace=False,
+                        ),
+                        # NOTE (arth): we disclude reset infos for episode labeling
+                        common.index_dict_array(
+                            self._trajectory_buffer.info,
+                            (
+                                slice(start_ptr + 1, end_ptr),
+                                env_idx,
                             ),
-                        )
+                            inplace=False,
+                        ),
                     )
-                    if (
-                        self.valid_episode_labels is not None
-                        and episode_label not in self.valid_episode_labels
-                    ):
+                    if self.valid_episode_labels is not None and episode_label not in self.valid_episode_labels:
                         continue
                     episode_info.update(
                         label=episode_label,
@@ -578,16 +553,10 @@ class RecordEpisode(gym.Wrapper):
                     **episode_info,
                 )
                 if self.label_episode:
-                    base_tp_uid = self.base_env.task_plan[0].composite_subtask_uids[
-                        env_idx
-                    ]
-                    base_subtask = self.base_env.base_task_plans[
-                        (base_tp_uid,)
-                    ].subtasks[0]
+                    base_tp_uid = self.base_env.task_plan[0].composite_subtask_uids[env_idx]
+                    base_subtask = self.base_env.base_task_plans[(base_tp_uid,)].subtasks[0]
                     if getattr(base_subtask, "articulation_config", None) is not None:
-                        articulation_type = (
-                            base_subtask.articulation_config.articulation_type
-                        )
+                        articulation_type = base_subtask.articulation_config.articulation_type
                     elif getattr(base_subtask, "articulation_type", None) is not None:
                         articulation_type = base_subtask.articulation_type
                     else:
@@ -600,9 +569,7 @@ class RecordEpisode(gym.Wrapper):
                     # NOTE: With multiple envs in GPU simulation, reset_kwargs do not make much sense
                     episode_info.update(reset_kwargs=dict())
 
-                def recursive_add_to_h5py(
-                    group: h5py.Group, data: Union[dict, Array], key
-                ):
+                def recursive_add_to_h5py(group: h5py.Group, data: Union[dict, Array], key):
                     """simple recursive data insertion for nested data structures into h5py, optimizing for visual data as well"""
                     if isinstance(data, dict):
                         subgrp = group.create_group(key, track_order=True)
@@ -642,15 +609,11 @@ class RecordEpisode(gym.Wrapper):
 
                 # Observations need special processing
                 if isinstance(self._trajectory_buffer.observation, dict):
-                    recursive_add_to_h5py(
-                        group, self._trajectory_buffer.observation, "obs"
-                    )
+                    recursive_add_to_h5py(group, self._trajectory_buffer.observation, "obs")
                 elif isinstance(self._trajectory_buffer.observation, np.ndarray):
                     group.create_dataset(
                         "obs",
-                        data=self._trajectory_buffer.observation[
-                            start_ptr:end_ptr, env_idx
-                        ],
+                        data=self._trajectory_buffer.observation[start_ptr:end_ptr, env_idx],
                         dtype=self._trajectory_buffer.observation.dtype,
                     )
                 else:
@@ -678,12 +641,8 @@ class RecordEpisode(gym.Wrapper):
                     self._trajectory_buffer.action,
                     (slice(start_ptr + 1, end_ptr), env_idx),
                 )
-                terminated = self._trajectory_buffer.terminated[
-                    start_ptr + 1 : end_ptr, env_idx
-                ]
-                truncated = self._trajectory_buffer.truncated[
-                    start_ptr + 1 : end_ptr, env_idx
-                ]
+                terminated = self._trajectory_buffer.terminated[start_ptr + 1 : end_ptr, env_idx]
+                truncated = self._trajectory_buffer.truncated[start_ptr + 1 : end_ptr, env_idx]
                 if isinstance(self._trajectory_buffer.action, dict):
                     recursive_add_to_h5py(group, actions, "actions")
                 else:
@@ -694,40 +653,26 @@ class RecordEpisode(gym.Wrapper):
                 if self._trajectory_buffer.success is not None:
                     group.create_dataset(
                         "success",
-                        data=self._trajectory_buffer.success[
-                            start_ptr + 1 : end_ptr, env_idx
-                        ],
+                        data=self._trajectory_buffer.success[start_ptr + 1 : end_ptr, env_idx],
                         dtype=bool,
                     )
                     episode_info.update(
-                        success_once=self._trajectory_buffer.success[
-                            start_ptr + 1 : end_ptr, env_idx
-                        ].any(),
-                        success_at_end=self._trajectory_buffer.success[
-                            end_ptr - 1, env_idx
-                        ],
+                        success_once=self._trajectory_buffer.success[start_ptr + 1 : end_ptr, env_idx].any(),
+                        success_at_end=self._trajectory_buffer.success[end_ptr - 1, env_idx],
                     )
                 if self._trajectory_buffer.fail is not None:
                     group.create_dataset(
                         "fail",
-                        data=self._trajectory_buffer.fail[
-                            start_ptr + 1 : end_ptr, env_idx
-                        ],
+                        data=self._trajectory_buffer.fail[start_ptr + 1 : end_ptr, env_idx],
                         dtype=bool,
                     )
-                    episode_info.update(
-                        fail=self._trajectory_buffer.fail[end_ptr - 1, env_idx]
-                    )
+                    episode_info.update(fail=self._trajectory_buffer.fail[end_ptr - 1, env_idx])
                 if self.record_env_state:
-                    recursive_add_to_h5py(
-                        group, self._trajectory_buffer.state, "env_states"
-                    )
+                    recursive_add_to_h5py(group, self._trajectory_buffer.state, "env_states")
                 if self.record_reward:
                     group.create_dataset(
                         "rewards",
-                        data=self._trajectory_buffer.reward[
-                            start_ptr + 1 : end_ptr, env_idx
-                        ],
+                        data=self._trajectory_buffer.reward[start_ptr + 1 : end_ptr, env_idx],
                         dtype=np.float32,
                     )
 
@@ -743,15 +688,11 @@ class RecordEpisode(gym.Wrapper):
                     if flush_count == 1:
                         print(f"Recorded episode {self._episode_id}")
                     else:
-                        print(
-                            f"Recorded episodes {self._episode_id - flush_count} to {self._episode_id}"
-                        )
+                        print(f"Recorded episodes {self._episode_id - flush_count} to {self._episode_id}")
 
         # truncate self._trajectory_buffer down to save memory
         if flush_count > 0:
-            self._trajectory_buffer.env_episode_ptr[env_idxs_to_flush] = (
-                len(self._trajectory_buffer.done) - 1
-            )
+            self._trajectory_buffer.env_episode_ptr[env_idxs_to_flush] = len(self._trajectory_buffer.done) - 1
             min_env_ptr = self._trajectory_buffer.env_episode_ptr.min()
             N = len(self._trajectory_buffer.done)
 
@@ -762,9 +703,7 @@ class RecordEpisode(gym.Wrapper):
             self._trajectory_buffer.observation = common.index_dict_array(
                 self._trajectory_buffer.observation, slice(min_env_ptr, N)
             )
-            self._trajectory_buffer.info = common.index_dict_array(
-                self._trajectory_buffer.info, slice(min_env_ptr, N)
-            )
+            self._trajectory_buffer.info = common.index_dict_array(self._trajectory_buffer.info, slice(min_env_ptr, N))
             self._trajectory_buffer.action = common.index_dict_array(
                 self._trajectory_buffer.action, slice(min_env_ptr, N)
             )
@@ -778,9 +717,7 @@ class RecordEpisode(gym.Wrapper):
             self._trajectory_buffer.truncated = common.index_dict_array(
                 self._trajectory_buffer.truncated, slice(min_env_ptr, N)
             )
-            self._trajectory_buffer.done = common.index_dict_array(
-                self._trajectory_buffer.done, slice(min_env_ptr, N)
-            )
+            self._trajectory_buffer.done = common.index_dict_array(self._trajectory_buffer.done, slice(min_env_ptr, N))
             if self._trajectory_buffer.success is not None:
                 self._trajectory_buffer.success = common.index_dict_array(
                     self._trajectory_buffer.success, slice(min_env_ptr, N)
@@ -820,23 +757,25 @@ class RecordEpisode(gym.Wrapper):
                 if suffix:
                     video_name += "_" + suffix
                 if self._avoid_overwriting_video:
-                    while (
-                        Path(self.output_dir)
-                        / (video_name.replace(" ", "_").replace("\n", "_") + ".mp4")
-                    ).exists():
+                    while (Path(self.output_dir) / (video_name.replace(" ", "_").replace("\n", "_") + ".mp4")).exists():
                         self._video_id += 1
                         video_name = "{}".format(self._video_id)
                         if suffix:
                             video_name += "_" + suffix
             else:
                 video_name = name
-            images_to_video(
-                self.render_images,
-                str(self.output_dir),
-                video_name=video_name,
-                fps=self.video_fps,
-                verbose=verbose,
-            )
+            # Filter out invalid images (empty or wrong shape)
+            valid_images = [img for img in self.render_images if isinstance(img, np.ndarray) and len(img.shape) >= 2]
+            if len(valid_images) > 0:
+                images_to_video(
+                    valid_images,
+                    str(self.output_dir),
+                    video_name=video_name,
+                    fps=self.video_fps,
+                    verbose=verbose,
+                )
+            else:
+                print(f"⚠️  Warning: No valid images to save for video {self._video_id}")
         self._video_steps = 0
         self.render_images = []
 

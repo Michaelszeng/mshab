@@ -143,6 +143,11 @@ POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS = dict(
             close=["fridge", "kitchen_counter"],
         ),
     ),
+    rl_navigate_only=dict(  # JUST FOR TESTING NAVIGATE
+        set_table=dict(
+            navigate=["all"],
+        ),
+    ),
 )
 
 

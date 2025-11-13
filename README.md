@@ -28,6 +28,192 @@ Official repository for the ManiSkill-HAB project by
    - In particular, for the benchmark in Fig. 2 of the paper, MS-HAB on Beta 18 uses only ~9.68GB vram, compared to nearly 24GB previously.
    - To update, please either remove and re-clone the `mshab` branch in ManiSkill3, or pull the latest changes from the `mshab` branch in ManiSkill3. Then, `pip install -e ManiSkill` again.
 
+## Notes
+
+### Dataset Structure (https://github.com/arth-shukla/mshab/issues/18):
+
+agent
+     - qpos (12-dim)
+     - qvel (12-dim)
+extra
+     - tcp_pose_wrt_base (7-dim), tcp = "tool center point", i.e. tip of robot's end effector
+     - obj_pose_wrt_base (7-dim), zero-masked if no object for task
+     - goal_pos_wrt_base (3-dim), zero-masked if no goal for task
+     - is_grasped (1-dim)
+sensor_param
+     - fetch_head
+           - extrinsic_cv
+           - cam2world_gl
+           - intrinsic_cv
+     - fetch_hand
+           - similar to head
+sensor_data
+     - fetch_head
+          - rgb (128x128x3, unit8)
+          - depth (128x128x1, int16)
+     - fetch_hand
+           - similar to head
+
+
+qpos and qvel are ordered as follows:
+
+root_x_axis_joint (dummy joint, excluded from obs)
+root_y_axis_joint (dummy joint, excluded from obs)
+root_z_rotation_joint (dummy joint, excluded from obs)
+torso_lift_joint
+head_pan_joint
+shoulder_pan_joint
+head_tilt_joint
+shoulder_lift_joint
+upperarm_roll_joint
+elbow_flex_joint
+forearm_roll_joint
+wrist_flex_joint
+wrist_roll_joint
+r_gripper_finger_joint
+l_gripper_finger_joint
+
+### Subtask Success Criteria
+
+1. PICK (lines 983-1033 in sequential_task.py)
+Goal: Grasp object and return to rest position
+Success requires ALL of:
+✅ is_grasped: Object is grasped (fingers holding it at max 30° angle)
+✅ ee_rest: End-effector at rest position (TCP close to resting pose)
+✅ robot_rest: Robot joints at rest configuration
+✅ is_static: Robot is still (velocities below threshold)
+✅ cumulative_force_within_limit: Total collision forces acceptable
+goal_pos_wrt_base: The rest position where gripper should return after grasping
+
+2. PLACE (lines 1035-1086 in sequential_task.py)
+Goal: Place object at target location
+Success requires ALL of:
+✅ obj_at_goal: Object within threshold of goal position
+For "zone" goals: Object XY inside rectangle, Z within threshold
+For "cylinder" goals: Object XY within radius, Z within threshold
+For "sphere" goals: Object within 3D distance
+✅ not_grasped: Gripper released the object
+✅ ee_rest: End-effector returned to rest
+✅ robot_rest: Robot at rest configuration
+✅ is_static: Robot is still
+✅ cumulative_force_within_limit: Forces acceptable
+goal_pos_wrt_base: The target position where object should be placed (e.g., countertop location, table spot)
+
+3. OPEN (lines 1301-1357 in sequential_task.py)
+Goal: Open articulated object (fridge, cabinet, drawer)
+Success requires ALL of:
+✅ articulation_open: Joint position > threshold (e.g., 80% of range)
+Fridge door: opened past threshold angle
+Drawer: pulled out past threshold distance
+✅ ee_rest: End-effector at rest
+✅ robot_rest: Robot at rest configuration
+✅ is_static: Robot is still
+✅ cumulative_force_within_limit: Forces acceptable
+goal_pos_wrt_base: The handle position to grasp (or zero-masked if not needed)
+
+4. CLOSE (similar to OPEN)
+Goal: Close articulated object
+Success requires ALL of:
+✅ articulation_closed: Joint position near minimum (< threshold)
+✅ ee_rest: End-effector at rest
+✅ robot_rest: Robot at rest configuration
+✅ is_static: Robot is still
+✅ cumulative_force_within_limit: Forces acceptable
+goal_pos_wrt_base: The handle position to grasp
+
+5. NAVIGATE (lines 1192-1299 in sequential_task.py)
+Goal: Move to location near an object/articulation
+Success requires ALL of:
+✅ navigated_close: Base position near target (within threshold)
+✅ oriented_correctly: Robot facing the right direction
+✅ is_grasped ONLY IF obj is not None (carrying an object during navigation)
+✅ ee_rest: End-effector at rest
+✅ robot_rest: Robot at rest configuration
+✅ is_static: Robot is still
+✅ cumulative_force_within_limit: Forces acceptable
+✅ (Optional) is_grasped: If carrying an object, must still be grasping
+goal_pos_wrt_base: The navigation target (position to move base to)
+
+
+### Task Plan JSON Format
+
+```
+{
+  "dataset": "<string: dataset name, e.g. 'ReplicaCADSetTableTrain'>",
+  "plans": [
+    {
+      // One long-horizon episode / plan
+      "build_config_name": "<string: scene instance file, e.g. 'v3_sc1_staging_04.scene_instance.json', contains which ReplicaCAD scene instance to load>",
+      "init_config_name": "<string: episode config file, e.g. 'train/set_table/episode_0.json', contains which HAB episode config to use for initial object placements, etc.>",
+
+      "subtasks": [
+        {
+          // COMMON FIELDS (present for all subtasks)
+          "type": "<string: one of 'navigate' | 'open' | 'close' | 'pick' | 'place'>",
+          "uid": "<string: unique subtask id, e.g. 'set_table-sequential-train-0-3'>",
+          "composite_subtask_uids": [
+            "<string: usually same as uid, but can group multiple atomic subtasks>"
+          ],
+
+          // OBJECT-RELATED FIELDS
+          "obj_id": "<string | null: YCB object id, e.g. '024_bowl-3' or '013_apple-0'>",
+
+          // GOAL FIELDS (mostly for 'place')
+          "goal_pos": [
+            "<float or null>", // x
+            "<float or null>", // y
+            "<float or null>"  // z
+          ],
+          "goal_rectangle_corners": [
+            [
+              "<float>", "<float>", "<float>"
+            ],
+            [
+              "<float>", "<float>", "<float>"
+            ],
+            [
+              "<float>", "<float>", "<float>"
+            ],
+            [
+              "<float>", "<float>", "<float>"
+            ]
+          ],
+          "validate_goal_rectangle_corners": "<bool: true/false; env should check sanity of rectangle>",
+
+          // ARTICULATION FIELDS (for open/close and some pick/place)
+          "articulation_type": "<string | null: e.g. 'kitchen_counter' or 'fridge'>",
+          "articulation_id": "<string | null: e.g. 'kitchen_counter-0' or 'fridge-0'>",
+          "articulation_handle_link_idx": "<int | null: link index containing handle>",
+          "articulation_handle_active_joint_idx": "<int | null: joint index used for open/close>",
+          "articulation_relative_handle_pos": [
+            "<float or null>", // x (local to handle link)
+            "<float or null>", // y
+            "<float or null>"  // z
+          ],
+
+          // Optional nested articulation config (mostly in pick subtasks)
+          "articulation_config": {
+            "articulation_type": "<string | null>",
+            "articulation_id": "<string | null>",
+            "articulation_handle_link_idx": "<int | null>",
+            "articulation_handle_active_joint_idx": "<int | null>"
+          },
+
+          // CLOSE-SPECIFIC OPTIONAL FIELD
+          "remove_obj_id": "<string | null: object to remove on close, usually null>"
+        }
+
+        // ... more subtasks for this plan
+      ]
+    }
+
+    // ... more plans
+  ]
+}
+```
+
+
+
 ## Setup and Installation
 
 1. **Install Environments**

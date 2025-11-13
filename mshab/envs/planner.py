@@ -3,26 +3,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
+import numpy as np
+import sapien
 import shortuuid
+import torch
 import yaml
 from dacite import from_dict
-
-import numpy as np
-import torch
-
-import sapien
-
 from mani_skill.utils.structs import Pose
-
 
 """
 Task Planner Dataclasses
 """
 
 PointTuple = Union[Tuple[float, float, float], List[float]]
-RectCorners = Union[
-    Tuple[PointTuple, PointTuple, PointTuple, PointTuple], List[PointTuple]
-]
+RectCorners = Union[Tuple[PointTuple, PointTuple, PointTuple, PointTuple], List[PointTuple]]
 HandleJointIdxAndRelativeHandlePosition = Tuple[int, PointTuple]
 
 
@@ -89,9 +83,7 @@ class PickSubtaskConfig(SubtaskConfig):
 @dataclass
 class PlaceSubtask(Subtask):
     obj_id: str
-    goal_rectangle_corners: Optional[
-        Union[List[str], RectCorners, List[RectCorners]]
-    ] = None
+    goal_rectangle_corners: Optional[Union[List[str], RectCorners, List[RectCorners]]] = None
     goal_pos: Optional[Union[PointTuple, List[PointTuple], str]] = None
     validate_goal_rectangle_corners: bool = True
     articulation_config: Optional[ArticulationConfig] = None
@@ -99,13 +91,8 @@ class PlaceSubtask(Subtask):
     def __post_init__(self):
         self.type = "place"
         super().__post_init__()
-        if (
-            self.validate_goal_rectangle_corners
-            and self.goal_rectangle_corners is not None
-        ):
-            self.goal_rectangle_corners = self._parse_rect_corners(
-                self.goal_rectangle_corners
-            )
+        if self.validate_goal_rectangle_corners and self.goal_rectangle_corners is not None:
+            self.goal_rectangle_corners = self._parse_rect_corners(self.goal_rectangle_corners)
 
         if isinstance(self.goal_pos, str):
             self.goal_pos = [float(coord) for coord in self.goal_pos.split(",")]
@@ -121,13 +108,12 @@ class PlaceSubtask(Subtask):
         sides1 = np.array([D - A, A - B, B - C, C - D])
         points_angles = np.rad2deg(
             np.arccos(
-                np.sum(sides0 * sides1, axis=1)
-                / (np.linalg.norm(sides0, axis=1) * np.linalg.norm(sides1, axis=1))
+                np.sum(sides0 * sides1, axis=1) / (np.linalg.norm(sides0, axis=1) * np.linalg.norm(sides1, axis=1))
             )
         )
-        assert np.all(
-            np.abs(points_angles - 90) < 1e-3
-        ), f"Should have points in ABCD order, but got angles {points_angles} between sides AB/AD, BC/BA, CD/CB, DA/DC"
+        assert np.all(np.abs(points_angles - 90) < 1e-3), (
+            f"Should have points in ABCD order, but got angles {points_angles} between sides AB/AD, BC/BA, CD/CB, DA/DC"
+        )
         return rect_corners
 
 
@@ -189,13 +175,13 @@ class OpenSubtaskConfig(SubtaskConfig):
         super().__post_init__()
 
         assert isinstance(self.joint_qpos_open_thresh_frac, dict)
-        assert (
-            "default" in self.joint_qpos_open_thresh_frac
-        ), "joint_qpos_open_thresh_frac requires default value to cover cases where a different articulation is opened"
+        assert "default" in self.joint_qpos_open_thresh_frac, (
+            "joint_qpos_open_thresh_frac requires default value to cover cases where a different articulation is opened"
+        )
         for v in self.joint_qpos_open_thresh_frac.values():
-            assert (
-                isinstance(v, float) and 0 <= v and v <= 1
-            ), f"joint_qpos_open_thresh_frac should be a float in [0, 1], instead got {v}"
+            assert isinstance(v, float) and 0 <= v and v <= 1, (
+                f"joint_qpos_open_thresh_frac should be a float in [0, 1], instead got {v}"
+            )
 
 
 @dataclass
@@ -238,7 +224,7 @@ class PlanData:
 
 
 def plan_data_from_file(config_path: str = None) -> PlanData:
-    config_path: Path = Path(config_path)
+    config_path: Path = Path(config_path).expanduser()
     assert config_path.exists(), f"Path {config_path} not found"
 
     suffix = Path(config_path).suffix

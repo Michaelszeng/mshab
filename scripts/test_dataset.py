@@ -1,20 +1,48 @@
 """
-Test script for visualizing dataset episodes.
+Dataset Structure (https://github.com/arth-shukla/mshab/issues/18):
 
-This script loads recorded demonstration data from HDF5 files and replays
-the actions in the environment. Unlike test_rl_policy.py which uses a trained
-policy to generate actions, this script directly uses the actions stored in
-the dataset.
+agent
+     - qpos (12-dim)
+     - qvel (12-dim)
+extra
+     - tcp_pose_wrt_base (7-dim)
+     - obj_pose_wrt_base (7-dim), zero-masked if no object for task
+     - goal_pos_wrt_base (3-dim), zero-masked if no goal for task
+     - is_grasped (1-dim)
+sensor_param
+     - fetch_head
+           - extrinsic_cv
+           - cam2world_gl
+           - intrinsic_cv
+     - fetch_hand
+           - similar to head
+sensor_data
+     - fetch_head
+          - rgb (128x128x3, unit8)
+          - depth (128x128x1, int16)
+     - fetch_hand
+          - rgb (128x128x3, unit8)
+          - depth (128x128x1, int16)
 
-Usage:
-    1. Configure task, subtask, split, and dataset paths below
-    2. Set episode_idx to select which episode to visualize
-    3. Set object_file_idx to select which object file to load
-    4. Optionally enable loop_episodes to cycle through all episodes
-    5. Run the script to see the visualization
 
-The environment setup matches the training configuration, including the same
-observation wrappers and action wrappers used during data collection.
+qpos and qvel are ordered as follows:
+
+root_x_axis_joint (dummy joint, excluded from obs)
+root_y_axis_joint (dummy joint, excluded from obs)
+root_z_rotation_joint (dummy joint, excluded from obs)
+torso_lift_joint
+head_pan_joint
+shoulder_pan_joint
+head_tilt_joint
+shoulder_lift_joint
+upperarm_roll_joint
+elbow_flex_joint
+forearm_roll_joint
+wrist_flex_joint
+wrist_roll_joint
+r_gripper_finger_joint
+l_gripper_finger_joint
+
 """
 
 import json
@@ -37,7 +65,7 @@ from mani_skill import ASSET_DIR
 import mshab.envs
 from mshab.envs.planner import plan_data_from_file
 from mshab.envs.wrappers.action import FetchActionWrapper
-from mshab.envs.wrappers.observation import FetchDepthObservationWrapper, FrameStack
+from mshab.envs.wrappers.observation import FetchDepthObservationWrapper, FetchRGBObservationWrapper, FrameStack
 from mshab.train_diffusion_policy import DPDataset
 
 # Configuration
@@ -47,13 +75,12 @@ split = "train"  # "train", "val"
 target_id = "all"  # e.g. "024_bowl", "013_apple", or "all"
 
 # Dataset configuration - DPDataset mode
-use_dp_dataset = True  # If True, use DPDataset with observation/action horizons
-obs_horizon = 2  # Observation horizon for diffusion policy
-pred_horizon = 16  # Prediction horizon for diffusion policy
-act_horizon = 8  # Action horizon (how many actions to execute)
+obs_horizon = 2
+pred_horizon = 16
+act_horizon = 1
 trajs_per_obj = "all"  # Number of trajectories to load per object file
 sample_idx = 0  # Which sample from the dataset to visualize (dataset provides pre-computed slices)
-loop_samples = False  # If True, continuously loop through dataset samples
+loop_samples = True  # If True, continuously loop through dataset samples
 show_action_details = False  # If True, print action values each step
 
 # Load task plans
@@ -77,46 +104,35 @@ if not data_path.exists():
 
 print(f"Loading dataset from: {data_path.absolute()}")
 
-if use_dp_dataset:
-    # Load dataset using DPDataset class (for diffusion policy visualization)
-    print(f"\nLoading DPDataset with obs_horizon={obs_horizon}, pred_horizon={pred_horizon}...")
-    dataset = DPDataset(
-        data_path=data_path,
-        obs_horizon=obs_horizon,
-        pred_horizon=pred_horizon,
-        control_mode="pd_joint_delta_pos",
-        trajs_per_obj=trajs_per_obj,
-        max_image_cache_size="all",  # Cache all images for visualization
-        truncate_trajectories_at_success=False,
-    )
+# For visualization, use 0 to avoid running out of RAM
+print(f"\nLoading DPDataset with obs_horizon={obs_horizon}, pred_horizon={pred_horizon}...")
+dataset = DPDataset(
+    data_path=data_path,
+    obs_horizon=obs_horizon,
+    pred_horizon=pred_horizon,
+    control_mode="pd_joint_delta_pos",
+    trajs_per_obj=trajs_per_obj,
+    max_image_cache_size=1,  # Load images on-demand; set to "all" for full dataset, or to any other another number
+    truncate_trajectories_at_success=False,
+)
 
-    print(f"Dataset loaded! Total samples: {len(dataset)}")
-    print("  - Each sample contains:")
-    print(f"    - Observation sequence: {obs_horizon} steps")
-    print(f"    - Action sequence: {pred_horizon} steps")
-    print(f"  - We'll execute {act_horizon} actions per sample during visualization")
+print(f"Dataset loaded! Total samples: {len(dataset)}")
+print("  - Each sample contains:")
+print(f"    - Observation sequence: {obs_horizon} steps")
+print(f"    - Action sequence: {pred_horizon} steps")
 
-    if sample_idx >= len(dataset):
-        print(f"\nERROR: sample_idx={sample_idx} is out of range (max={len(dataset) - 1})")
-        exit(1)
+if sample_idx >= len(dataset):
+    print(f"\nERROR: sample_idx={sample_idx} is out of range (max={len(dataset) - 1})")
 
-    # Get first sample to show structure
-    sample = dataset[sample_idx]
-    print(f"\nSample {sample_idx} structure:")
-    print(f"  - observations['state']: {sample['observations']['state'].shape}")
-    if "fetch_head_depth" in sample["observations"]:
-        print(f"  - observations['fetch_head_depth']: {sample['observations']['fetch_head_depth'].shape}")
-    if "fetch_hand_depth" in sample["observations"]:
-        print(f"  - observations['fetch_hand_depth']: {sample['observations']['fetch_hand_depth'].shape}")
-    print(f"  - actions: {sample['actions'].shape}")
-
-    actions = sample["actions"][:act_horizon].numpy()  # Extract act_horizon actions
-    print(f"\nWill execute {len(actions)} actions from this sample")
-else:
-    # Original simple H5 loading (for raw episode replay)
-    print("\nERROR: Non-DPDataset mode not implemented in this version.")
-    print("Please set use_dp_dataset=True")
-    exit(1)
+# Get first sample to show structure
+sample = dataset[sample_idx]
+print(f"\nSample {sample_idx} structure:")
+print(f"  - sample.keys(): {sample.keys()}")
+print(f"  - sample['observations'].keys(): {sample['observations'].keys()}")
+print(f"  - sample['observations']['state'].shape: {sample['observations']['state'].shape}")
+print(f"  - sample['observations']['fetch_head_depth'].shape: {sample['observations']['fetch_head_depth'].shape}")
+print(f"  - sample['observations']['fetch_hand_depth'].shape: {sample['observations']['fetch_hand_depth'].shape}")
+print(f"  - sample['actions'].shape: {sample['actions'].shape}")
 
 # Create environment for visualization
 human_conf = dict(
@@ -156,7 +172,8 @@ env = gym.make(
 )
 
 # Apply observation wrappers to match the training setup
-env = FetchDepthObservationWrapper(env, cat_state=True, cat_pixels=False)
+# env = FetchDepthObservationWrapper(env, cat_state=True, cat_pixels=False)
+env = FetchRGBObservationWrapper(env, cat_state=True, cat_pixels=False)
 env = FrameStack(
     env,
     num_stack=3,
@@ -171,15 +188,12 @@ env = FetchActionWrapper(
     stationary_head=True,
 )
 
-print("\nStarting visualization...")
-print("The environment will replay actions from the DPDataset.")
-print(f"Each sample executes {act_horizon} actions from a {pred_horizon}-action prediction.")
-if loop_samples:
-    print("Loop mode enabled - will cycle through dataset samples.")
 print("\nPress Ctrl+C to exit.\n")
 
 # Main loop - loop through dataset samples
+actions = sample["actions"][:act_horizon].numpy()  # Extract first act_horizon actions for first sample
 current_sample_idx = sample_idx
+obs, info = env.reset()  # Must reset before calling render()
 try:
     while True:
         # Load current sample
@@ -190,9 +204,6 @@ try:
             print(f"Sample {current_sample_idx}/{len(dataset)}")
             print(f"  - Executing {len(actions)} actions")
             print(f"{'=' * 60}")
-
-        # Reset environment
-        obs, info = env.reset()
 
         # Replay actions from the sample
         step = 0
@@ -206,11 +217,12 @@ try:
 
             # Step environment
             obs, reward, terminated, truncated, info = env.step(action)
-            total_reward += reward
+            reward_scalar = float(reward.item()) if isinstance(reward, torch.Tensor) else float(reward)
+            total_reward += reward_scalar
             step += 1
 
             # Display step info
-            status = f"Step {step}/{len(actions)}: reward={reward:.4f}, total={total_reward:.4f}"
+            status = f"Step {step}/{len(actions)}: reward={reward_scalar:.4f}, total={total_reward:.4f}"
             if show_action_details:
                 action_str = np.array2string(action, precision=3, suppress_small=True, max_line_width=100)
                 print(f"{status}")
