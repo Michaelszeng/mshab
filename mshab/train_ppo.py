@@ -239,6 +239,9 @@ def train(cfg: TrainConfig):
             log_env = eval_envs
         else:
             log_env = envs
+        # Early exit if no episode has finished yet to avoid IndexError when queues are empty
+        if len(log_env.return_queue) == 0:
+            return
         logger.store(
             key,
             return_per_step=common.to_tensor(log_env.return_queue, device=device).float().mean()
