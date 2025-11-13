@@ -214,6 +214,14 @@ goal_pos_wrt_base: The navigation target (position to move base to)
 
 
 ### SuperCloud Installations
+
+Download sapien-sim/physx-precompiled:
+```bash
+wget https://github.com/sapien-sim/physx-precompiled/releases/download/105.1-physx-5.3.1.patch0/linux-so.zip
+mkdir -p ~/.sapien/physx/105.1-physx-5.3.1.patch0
+unzip linux-so.zip -d ~/.sapien/physx/105.1-physx-5.3.1.patch0
+```
+
 Need a local installation of maniskill:
 ```bash
 git clone https://github.com/haosulab/ManiSkill.git -b mshab --single-branch

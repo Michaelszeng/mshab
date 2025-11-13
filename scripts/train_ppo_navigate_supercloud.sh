@@ -1,5 +1,13 @@
 #!/usr/bin/bash
 
+# LLsub ./train_ppo_navigate_supercloud.sh -s 20 -g volta:1
+
+# SuperCloud settings
+source /etc/profile
+module load anaconda/Python-ML-2025a
+wandb offline
+NUM_ENVS=189
+
 SEED=0
 
 TASK=tidy_house
