@@ -6,7 +6,7 @@
 source /etc/profile
 module load anaconda/Python-ML-2025a
 wandb offline
-NUM_ENVS=189
+NUM_ENVS=504
 
 SEED=0
 
