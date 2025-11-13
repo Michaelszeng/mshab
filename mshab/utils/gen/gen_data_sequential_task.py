@@ -39,6 +39,7 @@ from mshab.utils.time import NonOverlappingTimeProfiler
 if TYPE_CHECKING:
     from mshab.envs import SequentialTaskEnv
 
+# Note: commenting out "all" policies since object-specific policies are expected to perform better
 POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS = dict(
     rl=dict(
         tidy_house=dict(
@@ -52,7 +53,7 @@ POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS = dict(
                 "009_gelatin_box",
                 "010_potted_meat_can",
                 "024_bowl",
-                "all",
+                # "all",
             ],
             place=[
                 "002_master_chef_can",
@@ -64,7 +65,7 @@ POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS = dict(
                 "009_gelatin_box",
                 "010_potted_meat_can",
                 "024_bowl",
-                "all",
+                # "all",
             ],
             navigate=["all"],
         ),
@@ -79,7 +80,7 @@ POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS = dict(
                 "009_gelatin_box",
                 "010_potted_meat_can",
                 "024_bowl",
-                "all",
+                # "all",
             ],
             place=[
                 "002_master_chef_can",
@@ -91,7 +92,7 @@ POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS = dict(
                 "009_gelatin_box",
                 "010_potted_meat_can",
                 "024_bowl",
-                "all",
+                # "all",
             ],
             navigate=["all"],
         ),
@@ -459,10 +460,15 @@ def eval(task, task_plan_path):
 
     def update_fail_subtask_counts(done):
         if torch.any(done):
-            subtask_nums = last_subtask_pointer[done]
+            # Get indices of done environments
+            done_env_indices = torch.where(done)[0]
             total_subtasks = len(uenv.task_plan)
-            for fail_subtask, num_envs in zip(*np.unique(subtask_nums.cpu().numpy(), return_counts=True)):
-                subtask_fail_counts[fail_subtask] += num_envs
+
+            # Process each done environment individually
+            for env_idx in done_env_indices:
+                fail_subtask = last_subtask_pointer[env_idx].item()
+                subtask_fail_counts[fail_subtask] += 1
+
                 success_status = (
                     "✓ SUCCESS"
                     if fail_subtask >= total_subtasks
@@ -475,6 +481,7 @@ def eval(task, task_plan_path):
                 )
                 save_status = "[WILL SAVE]" if will_save else "[FILTERED OUT]"
                 print(f"\n📊 Env {env_idx} ended at step {step_num}: {success_status} {save_status}")
+
             with open(logger.exp_path / "subtask_fail_counts.json", "w+") as f:
                 json.dump(
                     dict((str(k), int(subtask_fail_counts[k])) for k in sorted(subtask_fail_counts.keys())),
