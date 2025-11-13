@@ -109,7 +109,7 @@ POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS = dict(
 )
 
 NUM_ENVS = 1  # Number of environments to run in parallel
-SEED = 0
+SEED = 1
 MAX_TRAJECTORIES = 1000  # Number of saved episodes (full sequential task attempts) that pass the filtering criteria
 
 DEMO_FILTER = "success"  # "any" | "success" | "min_success_subtasks"
@@ -441,6 +441,10 @@ def eval(task, task_plan_path):
     pbar = tqdm(range(MAX_TRAJECTORIES), total=MAX_TRAJECTORIES)
     step_num = 0
 
+    # Print debug header once
+    debug_header_printed = False
+    debug_line_count = 0
+
     def check_done():
         if SAVE_TRAJECTORIES:
             # NOTE (arth): eval_envs.env._env is bad, fix in wrappers instead (prob with get_attr func)
@@ -459,6 +463,7 @@ def eval(task, task_plan_path):
         pbar.set_description(f"{step_num=}")
 
     def update_fail_subtask_counts(done):
+        nonlocal debug_line_count
         if torch.any(done):
             # Get indices of done environments
             done_env_indices = torch.where(done)[0]
@@ -480,7 +485,12 @@ def eval(task, task_plan_path):
                     or (DEMO_FILTER == "success" and fail_subtask >= total_subtasks)
                 )
                 save_status = "[WILL SAVE]" if will_save else "[FILTERED OUT]"
-                print(f"\n📊 Env {env_idx} ended at step {step_num}: {success_status} {save_status}")
+                # Print newline to preserve status, then print message
+                print()
+                print(f"📊 Env {env_idx} ended at step {step_num}: {success_status} {save_status}")
+
+            # Reset counter so status prints fresh after messages
+            debug_line_count = 0
 
             with open(logger.exp_path / "subtask_fail_counts.json", "w+") as f:
                 json.dump(
@@ -496,58 +506,71 @@ def eval(task, task_plan_path):
         eval_obs, _, term, trunc, info = eval_envs.step(action)
         timer.end("sim_sample")
 
-        # Debug: Print subtask progression and success criteria every 100 steps
-        if step_num % 100 == 0:
-            curr_subtask = uenv.subtask_pointer[0].item()
+        # Debug: Print subtask progression and success criteria with dynamic updates
+        curr_subtask = uenv.subtask_pointer[0].item()
+
+        # Print header once
+        if not debug_header_printed:
             print(f"\n{'=' * 80}")
-            print(f"[Step {step_num}] Subtask: {curr_subtask}/{len(uenv.task_plan)}")
-
-            # Print all success-related info
-            if "is_success" in info:
-                is_succ = info["is_success"]
-                is_succ_val = is_succ[0] if hasattr(is_succ, "__len__") else is_succ
-                print(f"  is_success: {is_succ_val}")
-
-            # Print success checkers if available
-            if "success" in info and isinstance(info["success"], dict):
-                print("  Success Checkers:")
-                for key, val in info["success"].items():
-                    val_display = val[0] if hasattr(val, "__len__") and len(val) > 0 else val
-                    print(f"    {key}: {val_display}")
-
-            # Print navigation-relevant info keys
-            print("  Navigation Criteria:")
-            nav_keys = [
-                "navigated_close",  # Navigation goal reached
-                "cumulative_force_within_limit",  # Force limits OK
-                "robot_cumulative_force",  # Current force value
-                "robot_rest",  # Robot at rest
-                "ee_rest",  # End effector at rest
-                "is_static",  # Environment static
-            ]
-            for key in nav_keys:
-                if key in info:
-                    val = info[key]
-                    val_display = val[0] if hasattr(val, "__len__") and len(val) > 0 else val
-                    print(f"    {key}: {val_display}")
-
-            # Print other relevant keys
-            other_keys = ["subtask", "subtask_type", "elapsed_steps", "subtasks_steps_left"]
-            for key in other_keys:
-                if key in info:
-                    val = info[key]
-                    val_display = val[0] if hasattr(val, "__len__") and len(val) > 0 else val
-                    print(f"  {key}: {val_display}")
-
+            print("SUBTASK PROGRESS MONITOR")
             print(f"{'=' * 80}")
+            debug_header_printed = True
 
-        # Debug: Print when subtask advances
-        if torch.any(uenv.subtask_pointer != last_subtask_pointer):
-            for env_idx in range(uenv.num_envs):
-                if uenv.subtask_pointer[env_idx] != last_subtask_pointer[env_idx]:
-                    old_st = last_subtask_pointer[env_idx].item()
-                    new_st = uenv.subtask_pointer[env_idx].item()
-                    print(f"✨ Env {env_idx}: Advanced from subtask {old_st} → {new_st}")
+        # Build the status lines
+        status_lines = []
+        status_lines.append(f"[Step {step_num:5d}] Subtask: {curr_subtask}/{len(uenv.task_plan)}")
+
+        # is_success
+        if "is_success" in info:
+            is_succ = info["is_success"]
+            is_succ_val = is_succ[0] if hasattr(is_succ, "__len__") else is_succ
+            status_lines.append(f"  is_success: {is_succ_val}")
+
+        # Navigation criteria
+        nav_keys = [
+            "navigated_close",
+            "oriented_correctly",
+            "cumulative_force_within_limit",
+            "robot_rest",
+            "ee_rest",
+            "is_static",
+            "is_grasped",
+        ]
+        nav_status = []
+        for key in nav_keys:
+            if key in info:
+                val = info[key]
+                val_display = val[0] if hasattr(val, "__len__") and len(val) > 0 else val
+                # Use checkmark/cross for boolean values
+                if isinstance(val_display, (bool, np.bool_)):
+                    symbol = "✓" if val_display else "✗"
+                    nav_status.append(f"{key}:{symbol}")
+                else:
+                    nav_status.append(f"{key}:{val_display}")
+        if nav_status:
+            status_lines.append(f"  Nav: {' '.join(nav_status)}")
+
+        # Other info
+        if "subtasks_steps_left" in info:
+            val = info["subtasks_steps_left"]
+            val_display = val[0] if hasattr(val, "__len__") and len(val) > 0 else val
+            status_lines.append(f"  Steps left: {val_display}")
+
+        # Move cursor up if we've printed before, otherwise just print
+        if debug_line_count > 0:
+            # Move cursor up and clear each line
+            sys.stdout.write(f"\033[{debug_line_count}A")
+            for _ in range(debug_line_count):
+                sys.stdout.write("\033[K")  # Clear line
+                sys.stdout.write("\n")
+            sys.stdout.write(f"\033[{debug_line_count}A")
+
+        # Print all status lines
+        for line in status_lines:
+            print(line)
+
+        debug_line_count = len(status_lines)
+        sys.stdout.flush()
 
         eval_obs = to_tensor(
             eval_obs,

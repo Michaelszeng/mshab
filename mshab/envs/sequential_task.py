@@ -1064,14 +1064,14 @@ class SequentialTaskEnv(SceneManipulationEnv):
             # Debug: Print robot rest distances
             if env_idx[0].item() == 0 and hasattr(self, "_debug_robot_rest_counter"):
                 self._debug_robot_rest_counter += 1
-                if self._debug_robot_rest_counter % 100 == 0:
-                    print("\n🤖 Robot Rest Debug (no object):")
-                    print(f"  Torso dist: {torso_rest_dist[0].item():.4f} (threshold: 0.01)")
-                    print(f"  Joint dists: {robot_rest_dist[0].cpu().numpy()}")
-                    print(f"  Joint threshold: {self.navigate_cfg.robot_resting_qpos_tolerance}")
-                    joints_out = robot_rest_dist[0] >= self.navigate_cfg.robot_resting_qpos_tolerance
-                    if torch.any(joints_out):
-                        print(f"  Joints out of tolerance: {torch.where(joints_out)[0].cpu().numpy()}")
+                # if self._debug_robot_rest_counter % 100 == 0:
+                #     print("\n🤖 Robot Rest Debug (no object):")
+                #     print(f"  Torso dist: {torso_rest_dist[0].item():.4f} (threshold: 0.01)")
+                #     print(f"  Joint dists: {robot_rest_dist[0].cpu().numpy()}")
+                #     print(f"  Joint threshold: {self.navigate_cfg.robot_resting_qpos_tolerance}")
+                #     joints_out = robot_rest_dist[0] >= self.navigate_cfg.robot_resting_qpos_tolerance
+                #     if torch.any(joints_out):
+                # print(f"  Joints out of tolerance: {torch.where(joints_out)[0].cpu().numpy()}")
             elif not hasattr(self, "_debug_robot_rest_counter"):
                 self._debug_robot_rest_counter = 0
 
@@ -1088,13 +1088,13 @@ class SequentialTaskEnv(SceneManipulationEnv):
             # Debug: Print robot rest distances
             if env_idx[0].item() == 0 and hasattr(self, "_debug_robot_rest_counter"):
                 self._debug_robot_rest_counter += 1
-                if self._debug_robot_rest_counter % 100 == 0:
-                    print("\n🤖 Robot Rest Debug (with object):")
-                    print(f"  Joint dists: {robot_rest_dist[0].cpu().numpy()}")
-                    print(f"  Joint threshold (grasping): {self.navigate_cfg.robot_resting_qpos_tolerance_grasping}")
-                    joints_out = robot_rest_dist[0] >= self.navigate_cfg.robot_resting_qpos_tolerance_grasping
-                    if torch.any(joints_out):
-                        print(f"  Joints out of tolerance: {torch.where(joints_out)[0].cpu().numpy()}")
+                # if self._debug_robot_rest_counter % 100 == 0:
+                #     print("\n🤖 Robot Rest Debug (with object):")
+                #     print(f"  Joint dists: {robot_rest_dist[0].cpu().numpy()}")
+                #     print(f"  Joint threshold (grasping): {self.navigate_cfg.robot_resting_qpos_tolerance_grasping}")
+                #     joints_out = robot_rest_dist[0] >= self.navigate_cfg.robot_resting_qpos_tolerance_grasping
+                #     if torch.any(joints_out):
+                #         print(f"  Joints out of tolerance: {torch.where(joints_out)[0].cpu().numpy()}")
             elif not hasattr(self, "_debug_robot_rest_counter"):
                 self._debug_robot_rest_counter = 0
 
