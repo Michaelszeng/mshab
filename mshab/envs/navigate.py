@@ -306,6 +306,7 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
                 scene=self.scene,
                 scene_idxs=torch.tensor(art_sis, dtype=torch.int),
                 _merged=True,
+                _process_links=False,  # allow merging articulations with differing link counts/dofs
             )
             merged_articulation.name = f"articulation-{subtask_num}"
         else:
