@@ -57,21 +57,21 @@ sensor_data
 
 qpos and qvel are ordered as follows:
 
-root_x_axis_joint (dummy joint, excluded from obs)
-root_y_axis_joint (dummy joint, excluded from obs)
-root_z_rotation_joint (dummy joint, excluded from obs)
-torso_lift_joint
-head_pan_joint
-shoulder_pan_joint
-head_tilt_joint
-shoulder_lift_joint
-upperarm_roll_joint
-elbow_flex_joint
-forearm_roll_joint
-wrist_flex_joint
-wrist_roll_joint
-r_gripper_finger_joint
-l_gripper_finger_joint
+- root_x_axis_joint (dummy joint, excluded from obs)
+- root_y_axis_joint (dummy joint, excluded from obs)
+- root_z_rotation_joint (dummy joint, excluded from obs)
+- torso_lift_joint
+- head_pan_joint
+- shoulder_pan_joint
+- head_tilt_joint
+- shoulder_lift_joint
+- upperarm_roll_joint
+- elbow_flex_joint
+- forearm_roll_joint
+- wrist_flex_joint
+- wrist_roll_joint
+- r_gripper_finger_joint
+- l_gripper_finger_joint
 
 ### Subtask Success Criteria
 
