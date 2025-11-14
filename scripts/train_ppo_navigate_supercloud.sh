@@ -8,16 +8,18 @@ RUN=3
 source /etc/profile
 module load anaconda/Python-ML-2025a
 wandb offline
-NUM_ENVS=378
+NUM_ENVS=189
 
 SEED=0
 
-# TASK=tidy_house
+TASK=tidy_house
 # TASK=set_table
-TASK=prepare_groceries
+# TASK=prepare_groceries
 SUBTASK=navigate
 SPLIT=train
 OBJ=all
+
+echo "\nStarting Training for Task: $TASK, Subtask: $SUBTASK, Split: $SPLIT, Object: $OBJ, NUM_ENVS: $NUM_ENVS\n"
 
 # shellcheck disable=SC2001
 ENV_ID="$(echo $SUBTASK | sed 's/\b\(.\)/\u\1/g')SubtaskTrain-v0"
@@ -66,13 +68,13 @@ args=(
     "env.env_id=$ENV_ID"
     "env.task_plan_fp=$MS_ASSET_DIR/data/scene_datasets/replica_cad_dataset/rearrange/task_plans/$TASK/$SUBTASK/$SPLIT/$OBJ.json"
     "env.spawn_data_fp=$MS_ASSET_DIR/data/scene_datasets/replica_cad_dataset/rearrange/spawn_data/$TASK/$SUBTASK/$SPLIT/spawn_data.pt"
-    "algo.learning_rate=1e-4"
+    "algo.learning_rate=3e-4"
     "algo.gamma=0.95"
     "algo.gae=0.9"
     "algo.update_epochs=8"
     "algo.num_minibatches=16"
     "algo.total_timesteps=100_000_000"
-    "algo.eval_freq=null"
+    "algo.eval_freq=500_000"
     "algo.log_freq=50_000"
     "algo.save_freq=250_000"
     "algo.save_backup_ckpts=True"
@@ -84,11 +86,11 @@ args=(
     "eval_env.max_episode_steps=$max_episode_steps"
     "env.env_kwargs.task_cfgs.navigate.horizon=$max_episode_steps"
     "eval_env.env_kwargs.task_cfgs.navigate.horizon=$max_episode_steps"
-    "algo.num_steps=50"
+    "algo.num_steps=100"
     "env.continuous_task=False"
     "env.record_video=False"
     "env.info_on_video=False"
-    "eval_env.record_video=False"
+    "eval_env.record_video=True"
     "eval_env.info_on_video=True"
     "eval_env.save_video_freq=10"
     "logger.wandb=$WANDB"

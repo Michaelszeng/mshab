@@ -578,18 +578,16 @@ class NavigateSubtaskTrainEnv(SubtaskTrainEnv):
             # ------------------------------------------------------------------
             # Arm resting rewards
             # ------------------------------------------------------------------
-            # 1) Sparse bonus: if every joint is within the robot_rest tolerance,
-            #    add a one-shot bonus each step. (info["robot_rest"] is a Bool tensor.)
-            reward += 2.0 * info["robot_rest"].float()
+            # # 1) Sparse bonus: if every joint is within the robot_rest tolerance,
+            # #    add a one-shot bonus each step. (info["robot_rest"] is a Bool tensor.)
+            # reward += 2.0 * info["robot_rest"].float()
 
-            # 2) Dense shaping: penalise individual joint deviations rather than the
-            #    aggregate vector norm. Apply penalties per-joint to prevent the policy
-            #    from letting any single joint drift significantly.
+            # 2) Dense shaping: Penalize based on the WORST (maximum) joint deviation
+            # This ensures no single joint can drift significantly
             arm_joint_deviation = torch.abs(self.agent.robot.qpos[..., 3:-2] - self.resting_qpos)  # (N_envs, 10)
-            # Scale per joint: 0 dev → 1, 0.3 rad dev → 0.5, >1 rad dev asymptotically → 0
-            per_joint_penalties = 1 - torch.tanh(arm_joint_deviation / 0.3)
-            # Average across joints and scale to max reward of 2.0
-            per_joint_rest_rew = 2.0 * torch.mean(per_joint_penalties, dim=1)
+            max_joint_deviation = torch.max(arm_joint_deviation, dim=1)[0]  # (N_envs,)
+            # Scale: 0 dev → reward of 2.0, 0.3 rad dev → 1.0, >1 rad dev → ~0
+            per_joint_rest_rew = 2.0 * (1 - torch.tanh(max_joint_deviation / 0.3))
             reward += per_joint_rest_rew
 
             # OLD ARM RESTING REWARDS
