@@ -257,6 +257,9 @@ def train(cfg: TrainConfig):
             log_env = eval_envs
         else:
             log_env = envs
+        # Skip if queues are empty to avoid IndexError when converting to tensor
+        if len(log_env.return_queue) == 0:
+            return
         logger.store(
             key,
             return_per_step=common.to_tensor(log_env.return_queue, device=device)
