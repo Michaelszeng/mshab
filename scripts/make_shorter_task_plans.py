@@ -11,8 +11,12 @@ If REMOVE_FIRST_NAVIGATE is True, then we take the first pick + place sequence b
 import json
 from pathlib import Path
 
-TASK = "set_table"  # "set_table" or "tidy_house" or "prepare_groceries"
-REMOVE_FIRST_NAVIGATE = False  # If True, removes first "navigate" and updates spawn locations
+import torch
+
+TASK = "tidy_house"  # "set_table" or "tidy_house" or "prepare_groceries"
+REMOVE_FIRST_NAVIGATE = True  # If True, removes first "navigate" and updates spawn locations
+
+SPLIT = "train"
 
 if TASK == "set_table":
     TARGET_SEQUENCE = ["navigate", "open", "navigate", "pick", "navigate", "place"]
@@ -30,6 +34,44 @@ if REMOVE_FIRST_NAVIGATE:
         print(f"Removed first 'navigate'. New sequence: {TARGET_SEQUENCE}")
     else:
         raise ValueError("REMOVE_FIRST_NAVIGATE is True but first element is not 'navigate'")
+
+
+def generate_new_spawn_data(shortened_plans):
+    """Create a minimal spawn_data dict that teleports the robot for the *first* subtask
+    of each shortened sequential task plan.
+
+    We reuse poses from the corresponding single-subtask dataset (open or pick).
+    """
+    subtask_type = TARGET_SEQUENCE[0]  # "open" or "pick"
+
+    single_src = (
+        Path.home()
+        / f".maniskill/data/scene_datasets/replica_cad_dataset/rearrange/spawn_data/{TASK}/{subtask_type}/{SPLIT}/spawn_data.pt"
+    )
+    assert single_src.exists(), f"Could not find {single_src}"
+    print("loading single-subtask poses:", single_src)
+    single_sd = torch.load(single_src, map_location="cpu")
+
+    # pick an arbitrary sample pose (or the first) – could be scene-matched but usually fine
+    sample_pose = next(iter(single_sd.values()))
+
+    new_sd = {}
+    for plan in shortened_plans:
+        uid = plan["subtasks"][0]["uid"]
+        entry = {}
+        for k in ("robot_pos", "robot_qpos"):
+            if k in sample_pose:
+                entry[k] = sample_pose[k].clone()
+        new_sd[uid] = entry
+
+    dst = (
+        Path.home()
+        / f".maniskill/data/scene_datasets/replica_cad_dataset/rearrange/spawn_data/{TASK}/sequential/{SPLIT}/spawn_data_short_remove_first_navigate.pt"
+    )
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(new_sd, dst)
+    print("Saved new spawn_data to", dst)
+    return dst
 
 
 def shorten_task_plans(input_path, output_path):
@@ -68,11 +110,10 @@ def shorten_task_plans(input_path, output_path):
                 "init_config_name": plan["init_config_name"],
                 "subtasks": shortened_subtasks,
             }
-
-            # No need to adjust init_config_name; spawn positions are fetched from
-            # spawn_data.pt using the (unchanged) UID of the new first subtask.
-
             shortened_plans.append(shortened_plan)
+
+            # collect for spawn data later
+            pass
         else:
             print(
                 f"Warning: Plan with build_config '{plan['build_config_name']}' "
@@ -81,6 +122,9 @@ def shorten_task_plans(input_path, output_path):
 
     # Create output data structure
     output_data = {"dataset": data["dataset"], "plans": shortened_plans}
+
+    if REMOVE_FIRST_NAVIGATE:
+        generate_new_spawn_data(shortened_plans)
 
     # Write to output file
     output_path.parent.mkdir(parents=True, exist_ok=True)

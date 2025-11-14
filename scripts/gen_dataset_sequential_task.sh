@@ -5,11 +5,12 @@ if [[ -z "${MS_ASSET_DIR}" ]]; then
 fi
 
 TASKS=(
-    tidy_house
+    # tidy_house
     # prepare_groceries
-    # set_table
+    set_table
 )
 
+# TASK_PLAN_PATH="scene_datasets/replica_cad_dataset/rearrange/task_plans/{task}/sequential/train/all_short_remove_first_navigate.json"
 TASK_PLAN_PATH="scene_datasets/replica_cad_dataset/rearrange/task_plans/{task}/sequential/train/all_short.json"
 
 for task in "${TASKS[@]}"
