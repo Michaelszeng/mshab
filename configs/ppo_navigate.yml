@@ -1,0 +1,39 @@
+# Base PPO navigate configuration.
+# Values that differ run-to-run are supplied by the launcher script
+# (scripts/train_ppo_navigate.sh) via command-line overrides, so we leave
+# only the parameters that rarely change.
+
+env:
+  make_env: True
+
+  # Observation / rendering settings (unlikely to be overridden)
+  cat_state: True
+  cat_pixels: False
+  frame_stack: 3
+
+  stationary_base: False
+  stationary_torso: False
+  stationary_head: True
+
+  # Domain-randomisation / penalty defaults
+  env_kwargs:
+    robot_force_mult: 0.001
+    robot_force_penalty_min: 0.2
+    target_randomization: False
+
+algo:
+  name: ppo
+  anneal_lr: False
+  norm_adv: True
+  clip_coef: 0.2
+  clip_vloss: False
+  ent_coef: 0.0
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  target_kl: 0.2
+  finite_horizon_gae: True
+  torch_deterministic: True
+
+logger:
+  clear_out: True
+  tensorboard: True
