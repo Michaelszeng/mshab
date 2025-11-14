@@ -540,45 +540,52 @@ Official repository for the ManiSkill-HAB project by
 ### Dataset Structure (https://github.com/arth-shukla/mshab/issues/18):
 
 agent
-     - qpos (12-dim)
-     - qvel (12-dim)
+
+- qpos (12-dim)
+- qvel (12-dim)
+
 extra
-     - tcp_pose_wrt_base (7-dim), tcp = "tool center point", i.e. tip of robot's end effector
-     - obj_pose_wrt_base (7-dim), zero-masked if no object for task
-     - goal_pos_wrt_base (3-dim), zero-masked if no goal for task
-     - is_grasped (1-dim)
+
+- tcp_pose_wrt_base (7-dim), tcp = "tool center point", i.e. tip of robot's end effector
+- obj_pose_wrt_base (7-dim), zero-masked if no object for task
+- goal_pos_wrt_base (3-dim), zero-masked if no goal for task
+- is_grasped (1-dim)
+
 sensor_param
-     - fetch_head
-           - extrinsic_cv
-           - cam2world_gl
-           - intrinsic_cv
-     - fetch_hand
-           - similar to head
+
+- fetch_head
+      - extrinsic_cv
+      - cam2world_gl
+      - intrinsic_cv
+- fetch_hand
+      - similar to head
+
 sensor_data
-     - fetch_head
-          - rgb (128x128x3, unit8)
-          - depth (128x128x1, int16)
-     - fetch_hand
-           - similar to head
+
+- fetch_head
+    - rgb (128x128x3, unit8)
+    - depth (128x128x1, int16)
+- fetch_hand
+      - similar to head
 
 
 qpos and qvel are ordered as follows:
 
-root_x_axis_joint (dummy joint, excluded from obs)
-root_y_axis_joint (dummy joint, excluded from obs)
-root_z_rotation_joint (dummy joint, excluded from obs)
-torso_lift_joint
-head_pan_joint
-shoulder_pan_joint
-head_tilt_joint
-shoulder_lift_joint
-upperarm_roll_joint
-elbow_flex_joint
-forearm_roll_joint
-wrist_flex_joint
-wrist_roll_joint
-r_gripper_finger_joint
-l_gripper_finger_joint
+- root_x_axis_joint (dummy joint, excluded from obs)
+- root_y_axis_joint (dummy joint, excluded from obs)
+- root_z_rotation_joint (dummy joint, excluded from obs)
+- torso_lift_joint
+- head_pan_joint
+- shoulder_pan_joint
+- head_tilt_joint
+- shoulder_lift_joint
+- upperarm_roll_joint
+- elbow_flex_joint
+- orearm_roll_joint
+- wrist_flex_joint
+- wrist_roll_joint
+- r_gripper_finger_joint
+- l_gripper_finger_joint
 
 ### Subtask Success Criteria
 
